@@ -660,7 +660,7 @@ const resetForm = () => {
           <div class="w-full overflow-hidden">
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Tarikh Kunjungan</label>
             <div class="w-full max-w-full overflow-hidden rounded-xl border border-[#ebdcc3] bg-[#fffdfa] focus-within:ring-2 focus-within:ring-[#b48a57]">
-              <input v-model="visitDate" type="date" class="w-full px-4 py-2.5 text-sm bg-transparent outline-none block box-border" style="max-width: 100%;" />
+              <input v-model="visitDate" type="date" class="w-full px-4 py-2.5 text-sm bg-transparent outline-none block box-border text-center sm:text-left" style="max-width: 100%;" />
             </div>
           </div>
           <div class="w-full overflow-hidden">
@@ -888,7 +888,7 @@ const resetForm = () => {
           <div class="w-full overflow-hidden">
             <label class="block font-bold text-[#8c7355] mb-1">Tanggal Booking</label>
             <div class="w-full max-w-full overflow-hidden rounded-lg border border-[#ebdcc3] bg-white">
-              <input v-model="newBooking.booking_date" type="date" class="w-full px-3 py-2 text-xs bg-transparent outline-none block box-border" style="max-width: 100%;" />
+              <input v-model="newBooking.booking_date" type="date" class="w-full px-3 py-2 text-xs bg-transparent outline-none block box-border text-center sm:text-left" style="max-width: 100%;" />
             </div>
           </div>
 
