@@ -583,7 +583,7 @@ const resetForm = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#fdfbf7] text-[#3e3529] font-sans p-4 sm:p-6 lg:p-8">
+  <div class="min-h-screen bg-[#fdfbf7] text-[#3e3529] font-sans p-4 sm:p-6 lg:p-8 overflow-x-hidden">
     
     <!-- Toast Notification (Kanan Bawah) -->
     <transition name="toast">
@@ -656,16 +656,20 @@ const resetForm = () => {
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
+          <!-- FIX UNTUK SAFARI IPHONE DATE INPUT (min-w-0, max-w-full) -->
+          <div class="w-full">
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Tarikh Kunjungan</label>
-            <input v-model="visitDate" type="date" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
+            <input v-model="visitDate" type="date" class="w-full min-w-0 max-w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
           </div>
-          <div>
+          <div class="w-full">
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Cara Bayar</label>
             <select v-model="paymentMethod" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]">
               <option value="Cash">Cash</option>
-              <option value="Transfer Bank">Transfer Bank</option>
-              <option value="QR Pay">QR Pay</option>
+              <option value="Transfer BIBD">Transfer BIBD</option>
+              <option value="Transfer Baiduri">Transfer Baiduri</option>
+              <option value="QR Pay BIBD">QR Pay BIBD</option>
+              <option value="QR PAY BAIDURI">QR PAY BAIDURI</option>
+              <option value="Debit Card">Debit Card</option>
             </select>
           </div>
         </div>
@@ -718,18 +722,18 @@ const resetForm = () => {
 
           <!-- Bagian Item Layanan dengan Kolom Pencarian -->
           <div class="space-y-3">
-            <div v-for="(item, index) in selectedServices" :key="index" class="bg-[#fffdfa] p-4 rounded-xl border border-[#ebdcc3] space-y-3">
+            <div v-for="(item, index) in selectedServices" :key="index" class="bg-[#fffdfa] p-4 rounded-xl border border-[#ebdcc3] space-y-3 overflow-hidden">
               <div class="flex justify-between items-center">
                 <span class="text-xs font-bold text-[#8c7355]">Item #{{ index + 1 }}</span>
                 <button @click="removeServiceRow(index)" type="button" class="text-red-400 hover:text-red-600 text-xs font-bold" :disabled="selectedServices.length === 1">Hapus</button>
               </div>
               
               <!-- Kolom Pencarian Cepat Layanan -->
-              <div>
+              <div class="w-full">
                 <input v-model="serviceSearchKeywords[index]" type="text" placeholder="🔍 Ketik untuk cari layanan..." 
-                       class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none mb-2 focus:ring-1 focus:ring-[#b48a57]" />
+                       class="w-full min-w-0 max-w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none mb-2 focus:ring-1 focus:ring-[#b48a57]" />
                 
-                <select @change="onServiceSelect(index, $event)" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none">
+                <select @change="onServiceSelect(index, $event)" class="w-full min-w-0 max-w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none">
                   <option value="">-- Pilih Rawatan dari DB --</option>
                   <option v-for="serv in getFilteredServices(index)" :key="serv.id" :value="serv.id" :selected="serv.id === item.service_id">
                     {{ serv.name }} (B$ {{ serv.default_price }})
@@ -740,15 +744,15 @@ const resetForm = () => {
               <div class="grid grid-cols-3 gap-2">
                 <div>
                   <label class="text-[10px] uppercase font-bold text-[#8c7355]">Qty</label>
-                  <input v-model.number="item.qty" type="number" min="1" class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
+                  <input v-model.number="item.qty" type="number" min="1" class="w-full min-w-0 px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
                 </div>
                 <div>
                   <label class="text-[10px] uppercase font-bold text-[#8c7355]">Harga</label>
-                  <input v-model.number="item.price" type="number" min="0" class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
+                  <input v-model.number="item.price" type="number" min="0" class="w-full min-w-0 px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
                 </div>
                 <div>
                   <label class="text-[10px] uppercase font-bold text-[#8c7355]">Diskon</label>
-                  <input v-model.number="item.discount" type="number" min="0" class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
+                  <input v-model.number="item.discount" type="number" min="0" class="w-full min-w-0 px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
                 </div>
               </div>
             </div>
@@ -865,7 +869,7 @@ const resetForm = () => {
       </div>
 
       <!-- Modal Form Tambah Booking -->
-      <div v-if="showAddBookingModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md">
+      <div v-if="showAddBookingModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp</h4>
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -877,13 +881,14 @@ const resetForm = () => {
             <label class="block font-bold text-[#8c7355] mb-1">No. Telefon WhatsApp</label>
             <input v-model="newBooking.customer_phone" type="text" placeholder="+673..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
-          <div>
+          <!-- FIX UNTUK SAFARI IPHONE DATE INPUT -->
+          <div class="w-full overflow-hidden">
             <label class="block font-bold text-[#8c7355] mb-1">Tanggal Booking</label>
-            <input v-model="newBooking.booking_date" type="date" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+            <input v-model="newBooking.booking_date" type="date" class="w-full min-w-0 max-w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
-          <div>
+          <div class="w-full overflow-hidden">
             <label class="block font-bold text-[#8c7355] mb-1">Jam / Waktu Sesi (Bisa beda-beda per hari)</label>
-            <input v-model="newBooking.booking_time" type="time" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+            <input v-model="newBooking.booking_time" type="time" class="w-full min-w-0 max-w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
           <div>
             <label class="block font-bold text-[#8c7355] mb-1">Terapis Ditugaskan</label>
@@ -921,8 +926,8 @@ const resetForm = () => {
       </div>
 
       <!-- Filter Bulan / Tahun Kalendar -->
-      <div class="flex items-center justify-between bg-[#fffdfa] p-3 rounded-xl border border-[#ebdcc3] text-xs">
-        <div class="flex items-center gap-3">
+      <div class="flex flex-wrap items-center justify-between bg-[#fffdfa] p-3 rounded-xl border border-[#ebdcc3] text-xs gap-3">
+        <div class="flex flex-wrap items-center gap-3">
           <span class="font-bold text-[#5a4633]">Pilih Bulan:</span>
           <select v-model.number="calendarViewMonth" class="px-3 py-1.5 rounded-lg border border-[#ebdcc3] bg-white outline-none font-bold">
             <option v-for="m in 12" :key="m" :value="m">Bulan {{ m }}</option>
@@ -931,11 +936,11 @@ const resetForm = () => {
             <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
           </select>
         </div>
-        <p class="text-gray-500 italic">Klik pada salah satu tanggal untuk melihat daftar waktu sesi booking</p>
+        <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal</p>
       </div>
 
       <!-- Tampilan Grid Kalendar Bulanan -->
-      <div class="grid grid-cols-7 gap-2 text-center text-xs">
+      <div class="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs w-full">
         <div class="font-bold text-[#b48a57] py-2">Ahad</div>
         <div class="font-bold text-[#5a4633] py-2">Senin</div>
         <div class="font-bold text-[#5a4633] py-2">Selasa</div>
@@ -946,7 +951,7 @@ const resetForm = () => {
 
         <div v-for="(d, idx) in calendarDaysInMonth" :key="idx" 
              @click="d.dateStr && (selectedCalendarDate = d.dateStr)"
-             class="min-h-[85px] p-2 rounded-xl border flex flex-col items-center justify-between transition-all cursor-pointer relative"
+             class="min-h-[60px] sm:min-h-[85px] p-1 sm:p-2 rounded-xl border flex flex-col items-center justify-between transition-all cursor-pointer relative"
              :class="[
                !d.dayNum ? 'bg-gray-50 border-transparent cursor-default' : 
                selectedCalendarDate === d.dateStr ? 'bg-[#f4ecd8] border-[#b48a57] shadow-sm' : 'bg-[#fffdfa] border-[#ebdcc3] hover:bg-amber-50/50'
@@ -955,7 +960,7 @@ const resetForm = () => {
           <span v-if="d.dayNum" class="font-bold text-xs" :class="selectedCalendarDate === d.dateStr ? 'text-[#b48a57]' : 'text-[#3e3529]'">{{ d.dayNum }}</span>
 
           <div v-if="d.dayNum && bookingList.filter(item => item.booking_date === d.dateStr).length > 0" class="my-auto">
-            <span class="px-2 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[10px] font-bold shadow-sm">
+            <span class="px-1.5 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
               {{ bookingList.filter(item => item.booking_date === d.dateStr).length }} sesi
             </span>
           </div>
@@ -1089,7 +1094,8 @@ const resetForm = () => {
         <!-- 1. Kontrol Harian -->
         <div v-if="dashboardPeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
           <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
-          <input v-model="selectedDateDaily" type="date" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          <!-- FIX UNTUK SAFARI IPHONE DATE INPUT -->
+          <input v-model="selectedDateDaily" type="date" class="w-full min-w-0 max-w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
         </div>
 
         <!-- 2. Kontrol Mingguan -->
