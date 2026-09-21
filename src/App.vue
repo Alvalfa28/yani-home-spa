@@ -1033,7 +1033,7 @@ const resetForm = () => {
               <p v-if="book.notes" class="text-gray-500 italic bg-[#fdfbf7] p-2 rounded border border-[#ebdcc3]">Pesan WA: "{{ book.notes }}"</p>
             </div>
 
-            <!-- Tombol Aksi Booking termasuk Tombol Hapus Sesi -->
+            <!-- Tombol Aksi Booking (Termasuk Hapus Sesi yang Selalu Tampil) -->
             <div class="flex flex-wrap gap-2">
               <button @click="useBookingForInvoice(book)" class="px-3 py-1.5 bg-[#2d7a4f] text-white rounded-lg font-bold text-[10px] shadow">
                 ✨ Buat Invois
