@@ -69,14 +69,14 @@ const calendarViewYear = ref(currentYear)
 const selectedCalendarDate = ref(new Date().toISOString().split('T')[0])
 const showAddBookingModal = ref(false)
 
-// Form Input Booking Baru (Mendukung banyak rawatan terpilih & multi waktu per hari)
+// Form Input Booking Baru
 const newBooking = ref({
   customer_name: '',
   customer_phone: '',
   booking_date: new Date().toISOString().split('T')[0],
   booking_time: '10:00',
   therapist: '',
-  selected_services: [], // Array menampung banyak layanan ID yang dicentang
+  selected_services: [],
   notes: ''
 })
 
@@ -106,7 +106,6 @@ const fetchData = async () => {
     const { data: historyData } = await supabase.from('yhs_invoices').select('*').order('created_at', { ascending: false })
     invoiceHistory.value = historyData || []
 
-    // Ambil data booking (tabel yhs_bookings)
     const { data: bookData, error: bookErr } = await supabase.from('yhs_bookings').select('*').order('booking_date', { ascending: true })
     if (bookErr) {
       console.warn('Tabel yhs_bookings belum dibuat:', bookErr.message)
@@ -261,11 +260,29 @@ const calendarDaysInMonth = computed(() => {
   return days
 })
 
-// Booking yang cocok dengan tanggal yang diklik
-const bookingsForSelectedDate = computed(() => {
-  return bookingList.value
-    .filter(b => b.booking_date === selectedCalendarDate.value)
+// Pengelompokan Booking pada Tanggal Terpilih Berdasarkan Daftar Terapis (Kolom Dinamis)
+const bookingsGroupedByTherapist = computed(() => {
+  const dateBookings = bookingList.value.filter(b => b.booking_date === selectedCalendarDate.value)
+  
+  const columns = {}
+  
+  // Masukkan setiap terapis yang terdaftar di master data sebagai kolom
+  availableTherapists.value.forEach(thp => {
+    columns[thp.name] = dateBookings
+      .filter(b => b.therapist === thp.name)
+      .sort((a, b) => (a.booking_time || '00:00').localeCompare(b.booking_time || '00:00'))
+  })
+
+  // Kolom tambahan untuk Tanpa Terapis atau terapis lain jika ada
+  const unassigned = dateBookings
+    .filter(b => !b.therapist || b.therapist === 'Tanpa Terapis' || !availableTherapists.value.some(t => t.name === b.therapist))
     .sort((a, b) => (a.booking_time || '00:00').localeCompare(b.booking_time || '00:00'))
+  
+  if (unassigned.length > 0 || Object.keys(columns).length === 0) {
+    columns['Tanpa Terapis'] = unassigned
+  }
+
+  return columns
 })
 
 const getFilteredServices = (index) => {
@@ -608,6 +625,7 @@ const resetForm = () => {
 <template>
   <div class="min-h-screen bg-[#fdfbf7] text-[#3e3529] font-sans p-4 sm:p-6 lg:p-8 overflow-x-hidden w-full">
     
+    <!-- Toast Notification -->
     <transition name="toast">
       <div v-if="toast.show" 
            class="fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium border flex items-center gap-3 backdrop-blur-md transition-all"
@@ -616,12 +634,14 @@ const resetForm = () => {
       </div>
     </transition>
 
+    <!-- Top Header Brand -->
     <div class="text-center mb-6 flex flex-col items-center print:hidden">
       <img :src="logoImage" alt="Logo" class="w-20 h-20 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-3" />
       <h1 class="font-serif text-2xl font-bold tracking-widest uppercase text-[#5a4633]">Yani Home & Spa</h1>
       <p class="text-xs uppercase tracking-widest text-[#8c7355] font-semibold">Invoice System • Rawatan Pantang</p>
     </div>
 
+    <!-- NAVBAR / MENU NAVIGASI UTAMA -->
     <div class="max-w-7xl mx-auto mb-8 flex flex-wrap justify-center gap-2 print:hidden">
       <button @click="currentView = 'form'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'form' ? 'bg-[#b48a57] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
@@ -645,9 +665,12 @@ const resetForm = () => {
       </button>
     </div>
 
-    <!-- VIEW 1: FORM -->
+    <!-- ================= VIEW 1: HALAMAN UTAMA / FORMULIR INVOIS ================= -->
     <div v-if="currentView === 'form'" class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      
+      <!-- KOLOM KIRI: FORMULIR -->
       <div class="lg:col-span-7 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 space-y-6 print:hidden">
+        
         <h2 class="font-serif text-lg font-bold text-[#5a4633] border-b border-[#f4ecd8] pb-3">Maklumat Pelanggan / Customer Info</h2>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -655,6 +678,7 @@ const resetForm = () => {
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Nama Pelanggan (Ketik huruf...)</label>
             <input v-model="customerName" @focus="showCustomerDropdown = true" type="text" placeholder="Ketik nama (cth: A...)" 
                    class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
+            
             <div v-if="showCustomerDropdown && filteredCustomers.length > 0" 
                  class="absolute left-0 right-0 mt-1 bg-white border border-[#ebdcc3] rounded-xl shadow-lg z-20 max-h-40 overflow-y-auto">
               <div v-for="cust in filteredCustomers" :key="cust.id" @click="selectCustomer(cust)"
@@ -708,7 +732,7 @@ const resetForm = () => {
           </div>
         </div>
 
-        <!-- Modal Terapis -->
+        <!-- Modal Tambah & Kelola Terapis -->
         <div v-if="showAddTherapistModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] space-y-4">
           <h4 class="font-serif text-sm font-bold text-[#5a4633]">Kelola Terapis (Tambah / Hapus)</h4>
           <div class="flex gap-2">
@@ -800,9 +824,10 @@ const resetForm = () => {
           <button @click="resetForm" type="button" class="py-3 px-4 bg-[#fffdfa] text-[#5a4633] border border-[#ebdcc3] font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-[#f4ecd8] transition-all">🔄 Reset</button>
           <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">💾 Simpan DB</button>
         </div>
+
       </div>
 
-      <!-- INVOICE PREVIEW -->
+      <!-- KOLOM KANAN: LIVE PREVIEW INVOICE -->
       <div id="invoice-preview" class="lg:col-span-5 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 sticky top-6">
         <div class="text-center border-b border-[#ebdcc3] pb-6 mb-6 flex flex-col items-center">
           <img :src="logoImage" alt="Logo" class="w-16 h-16 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-2" />
@@ -872,12 +897,13 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- VIEW 1.5: KALENDAR BOOKING -->
-    <div v-if="currentView === 'calendar'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+    <!-- ================= VIEW 1.5: KALENDAR BOOKING (KOLOM TERAPIS DINAMIS) ================= -->
+    <div v-if="currentView === 'calendar'" class="max-w-7xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+      
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
-          <h3 class="font-serif text-xl font-bold text-[#5a4633]">📅 Kalendar Jadwal Booking WhatsApp</h3>
-          <p class="text-xs text-[#8c7355]">1 hari dapat menampung banyak sesi/waktu booking berbeda</p>
+          <h3 class="font-serif text-xl font-bold text-[#5a4633]">📅 Kalendar Jadwal Booking Berdasarkan Terapis</h3>
+          <p class="text-xs text-[#8c7355]">Jadwal harian dikelompokkan otomatis ke dalam kolom masing-masing terapis</p>
         </div>
         
         <div class="flex items-center gap-3">
@@ -888,7 +914,7 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Modal Booking -->
+      <!-- Modal Form Tambah Booking -->
       <div v-if="showAddBookingModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp</h4>
         
@@ -950,7 +976,7 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Filter Bulan -->
+      <!-- Filter Bulan / Tahun Kalendar -->
       <div class="flex flex-wrap items-center justify-between bg-[#fffdfa] p-3 rounded-xl border border-[#ebdcc3] text-xs gap-3">
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-bold text-[#5a4633]">Pilih Bulan:</span>
@@ -964,7 +990,7 @@ const resetForm = () => {
         <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal</p>
       </div>
 
-      <!-- Grid Kalendar -->
+      <!-- Tampilan Grid Kalendar Bulanan -->
       <div class="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs w-full">
         <div class="font-bold text-[#b48a57] py-2">Ahad</div>
         <div class="font-bold text-[#5a4633] py-2">Senin</div>
@@ -981,67 +1007,102 @@ const resetForm = () => {
                !d.dayNum ? 'bg-gray-50 border-transparent cursor-default' : 
                selectedCalendarDate === d.dateStr ? 'bg-[#f4ecd8] border-[#b48a57] shadow-sm' : 'bg-[#fffdfa] border-[#ebdcc3] hover:bg-amber-50/50'
              ]">
+          
           <span v-if="d.dayNum" class="font-bold text-xs" :class="selectedCalendarDate === d.dateStr ? 'text-[#b48a57]' : 'text-[#3e3529]'">{{ d.dayNum }}</span>
+
           <div v-if="d.dayNum && bookingList.filter(item => item.booking_date === d.dateStr).length > 0" class="my-auto">
             <span class="px-1.5 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
               {{ bookingList.filter(item => item.booking_date === d.dateStr).length }} sesi
             </span>
           </div>
+
           <span v-if="d.dayNum"></span>
         </div>
       </div>
 
-      <!-- Daftar Sesi Booking dengan Tombol Hapus -->
+      <!-- TABEL KOLOM TERAPIS DINAMIS UNTUK TANGGAL TERPILIH -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
-        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📋 Daftar Waktu Sesi Booking Tanggal: <span class="text-[#b48a57]">{{ selectedCalendarDate }}</span></h4>
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">
+          📋 Jadwal Sesi Tanggal: <span class="text-[#b48a57] font-bold">{{ selectedCalendarDate }}</span> (Berdasarkan Kolom Terapis)
+        </h4>
 
-        <div v-if="bookingsForSelectedDate.length === 0" class="text-xs text-gray-500 text-center py-6">Tidak ada jadwal booking pada tanggal ini.</div>
+        <!-- Container Kolom Terapis (Responsive Grid) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+          
+          <!-- Looping setiap Terapis sebagai Kolom Tabel Dinamis -->
+          <div v-for="(bookings, therapistName) in bookingsGroupedByTherapist" :key="therapistName" 
+               class="bg-white rounded-xl border border-[#ebdcc3] shadow-sm overflow-hidden flex flex-col">
+            
+            <!-- Header Kolom Terapis -->
+            <div class="bg-[#5a4633] text-white px-4 py-3 flex justify-between items-center">
+              <span class="font-serif font-bold text-sm tracking-wide">👩‍⚕️ Terapis: {{ therapistName }}</span>
+              <span class="bg-[#b48a57] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                {{ bookings.length }} sesi
+              </span>
+            </div>
 
-        <div v-else class="space-y-3">
-          <div v-for="book in bookingsForSelectedDate" :key="book.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <span class="font-bold text-xs bg-[#b48a57] text-white px-2 py-0.5 rounded">⏰ {{ book.booking_time }}</span>
-                <span class="font-bold font-serif text-sm text-[#5a4633]">{{ book.customer_name }}</span>
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold"
-                      :class="book.status === 'Terjadwal' ? 'bg-amber-100 text-amber-800' : book.status === 'Selesai' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'">
-                  {{ book.status }}
-                </span>
-              </div>
-              <p class="text-gray-600">📞 {{ book.customer_phone || '-' }}</p>
+            <!-- Isi Sesi Booking dalam Kolom -->
+            <div class="p-3 space-y-3 flex-1 bg-[#fffdfa] max-h-[500px] overflow-y-auto">
               
-              <div class="text-[#b48a57] font-semibold space-y-0.5">
-                <p class="text-[11px] uppercase font-bold text-gray-400">Rawatan Dipesan:</p>
-                <div v-for="(tr, ti) in book.treatments" :key="ti" class="text-xs">
-                  • {{ tr.name }} (B$ {{ tr.price }})
-                </div>
+              <div v-if="bookings.length === 0" class="text-xs text-gray-400 text-center py-8 italic">
+                Tidak ada sesi jadwal untuk {{ therapistName }} pada tanggal ini.
               </div>
 
-              <p class="text-gray-600">👩‍⚕️ Terapis: <span class="font-semibold">{{ book.therapist }}</span></p>
-              <p v-if="book.notes" class="text-gray-500 italic bg-[#fdfbf7] p-2 rounded border border-[#ebdcc3]">Pesan WA: "{{ book.notes }}"</p>
+              <!-- Kartu Sesi Klien -->
+              <div v-for="book in bookings" :key="book.id" class="p-3 rounded-lg border border-[#ebdcc3] bg-white text-xs space-y-2 shadow-sm">
+                
+                <div class="flex justify-between items-center border-b border-gray-100 pb-1.5">
+                  <span class="font-bold text-xs bg-[#b48a57] text-white px-2 py-0.5 rounded">⏰ {{ book.booking_time }}</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                        :class="book.status === 'Terjadwal' ? 'bg-amber-100 text-amber-800' : book.status === 'Selesai' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'">
+                    {{ book.status }}
+                  </span>
+                </div>
+
+                <div>
+                  <p class="font-serif font-bold text-sm text-[#5a4633]">{{ book.customer_name }}</p>
+                  <p class="text-gray-600 text-[11px]">📞 {{ book.customer_phone || '-' }}</p>
+                </div>
+                
+                <!-- Rawatan Dipesan -->
+                <div class="bg-[#fdfbf7] p-2 rounded border border-[#ebdcc3] space-y-0.5">
+                  <p class="text-[10px] uppercase font-bold text-[#8c7355]">Rawatan Dipesan:</p>
+                  <div v-for="(tr, ti) in book.treatments" :key="ti" class="text-[11px] text-[#3e3529] font-medium">
+                    • {{ tr.name }} <span class="text-[#b48a57]">({{ formatCurrency(tr.price) }})</span>
+                  </div>
+                </div>
+
+                <p v-if="book.notes" class="text-gray-500 text-[11px] italic">Catatan: "{{ book.notes }}"</p>
+
+                <!-- Tombol Aksi Sesi -->
+                <div class="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
+                  <button @click="useBookingForInvoice(book)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">
+                    ✨ Buat Invois
+                  </button>
+                  <button v-if="book.status === 'Terjadwal'" @click="updateBookingStatus(book.id, 'Selesai')" class="px-2 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px]">
+                    Selesai
+                  </button>
+                  <button v-if="book.status === 'Terjadwal'" @click="updateBookingStatus(book.id, 'Batal')" class="px-2 py-1 bg-red-100 text-red-700 rounded font-bold text-[10px]">
+                    Batal
+                  </button>
+                  <button @click="deleteBookingFromDB(book.id, book.customer_name)" class="px-2 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700">
+                    🗑️ Hapus
+                  </button>
+                </div>
+
+              </div>
+
             </div>
 
-            <!-- Tombol Aksi & Hapus Sesi -->
-            <div class="flex flex-wrap gap-2">
-              <button @click="useBookingForInvoice(book)" class="px-3 py-1.5 bg-[#2d7a4f] text-white rounded-lg font-bold text-[10px] shadow">
-                ✨ Buat Invois
-              </button>
-              <button v-if="book.status === 'Terjadwal'" @click="updateBookingStatus(book.id, 'Selesai')" class="px-3 py-1.5 bg-[#3b5998] text-white rounded-lg font-bold text-[10px]">
-                Selesai
-              </button>
-              <button v-if="book.status === 'Terjadwal'" @click="updateBookingStatus(book.id, 'Batal')" class="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg font-bold text-[10px]">
-                Batalkan
-              </button>
-              <button @click="deleteBookingFromDB(book.id, book.customer_name)" class="px-3 py-1.5 bg-red-600 text-white rounded-lg font-bold text-[10px] shadow hover:bg-red-700 transition-all">
-                🗑️ Hapus Sesi
-              </button>
-            </div>
           </div>
+
         </div>
+
       </div>
+
     </div>
 
-    <!-- VIEW 2: CUSTOMERS -->
+    <!-- ================= VIEW 2: HALAMAN DATABASE PELANGGAN ================= -->
     <div v-if="currentView === 'customers'" class="max-w-3xl mx-auto bg-white rounded-2xl p-6 shadow-xl border border-[#ebdcc3] space-y-4">
       <div class="flex justify-between items-center border-b border-[#f4ecd8] pb-3">
         <h3 class="font-serif text-lg font-bold text-[#5a4633]">👥 Database Pelanggan (Urut A-Z)</h3>
@@ -1062,7 +1123,7 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- VIEW 3: HISTORY -->
+    <!-- ================= VIEW 3: HALAMAN RIWAYAT INVOIS ================= -->
     <div v-if="currentView === 'history'" class="max-w-2xl mx-auto bg-white rounded-2xl p-6 shadow-xl border border-[#ebdcc3] space-y-4">
       <div class="flex justify-between items-center border-b border-[#f4ecd8] pb-3">
         <h3 class="font-serif text-lg font-bold text-[#5a4633]">📜 Riwayat Invois</h3>
@@ -1090,8 +1151,9 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- VIEW 4: DASHBOARD -->
+    <!-- ================= VIEW 4: HALAMAN DASHBOARD STATISTIK ================= -->
     <div v-if="currentView === 'dashboard'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+      
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">📊 Dashboard Statistik & Analitik</h3>
@@ -1136,7 +1198,7 @@ const resetForm = () => {
             <option :value="5">Bulan 5 (Mei)</option>
             <option :value="6">Bulan 6 (Jun)</option>
             <option :value="7">Bulan 7 (Julai)</option>
-            <option :value="8">Bulan 8 (Ogos)</option>
+            <option :value="8">Bulan 8 (September)</option>
             <option :value="9">Bulan 9 (September)</option>
             <option :value="10">Bulan 10 (Oktober)</option>
             <option :value="11">Bulan 11 (November)</option>
@@ -1231,6 +1293,7 @@ const resetForm = () => {
           </div>
         </div>
       </div>
+
     </div>
 
   </div>
