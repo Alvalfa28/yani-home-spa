@@ -608,7 +608,6 @@ const resetForm = () => {
 <template>
   <div class="min-h-screen bg-[#fdfbf7] text-[#3e3529] font-sans p-4 sm:p-6 lg:p-8 overflow-x-hidden w-full">
     
-    <!-- Toast Notification -->
     <transition name="toast">
       <div v-if="toast.show" 
            class="fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium border flex items-center gap-3 backdrop-blur-md transition-all"
@@ -617,14 +616,12 @@ const resetForm = () => {
       </div>
     </transition>
 
-    <!-- Top Header Brand -->
     <div class="text-center mb-6 flex flex-col items-center print:hidden">
       <img :src="logoImage" alt="Logo" class="w-20 h-20 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-3" />
       <h1 class="font-serif text-2xl font-bold tracking-widest uppercase text-[#5a4633]">Yani Home & Spa</h1>
       <p class="text-xs uppercase tracking-widest text-[#8c7355] font-semibold">Invoice System • Rawatan Pantang</p>
     </div>
 
-    <!-- NAVBAR / MENU NAVIGASI UTAMA -->
     <div class="max-w-7xl mx-auto mb-8 flex flex-wrap justify-center gap-2 print:hidden">
       <button @click="currentView = 'form'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'form' ? 'bg-[#b48a57] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
@@ -648,12 +645,9 @@ const resetForm = () => {
       </button>
     </div>
 
-    <!-- ================= VIEW 1: HALAMAN UTAMA / FORMULIR INVOIS ================= -->
+    <!-- VIEW 1: FORM -->
     <div v-if="currentView === 'form'" class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-      
-      <!-- KOLOM KIRI: FORMULIR -->
       <div class="lg:col-span-7 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 space-y-6 print:hidden">
-        
         <h2 class="font-serif text-lg font-bold text-[#5a4633] border-b border-[#f4ecd8] pb-3">Maklumat Pelanggan / Customer Info</h2>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -661,7 +655,6 @@ const resetForm = () => {
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Nama Pelanggan (Ketik huruf...)</label>
             <input v-model="customerName" @focus="showCustomerDropdown = true" type="text" placeholder="Ketik nama (cth: A...)" 
                    class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
-            
             <div v-if="showCustomerDropdown && filteredCustomers.length > 0" 
                  class="absolute left-0 right-0 mt-1 bg-white border border-[#ebdcc3] rounded-xl shadow-lg z-20 max-h-40 overflow-y-auto">
               <div v-for="cust in filteredCustomers" :key="cust.id" @click="selectCustomer(cust)"
@@ -715,7 +708,7 @@ const resetForm = () => {
           </div>
         </div>
 
-        <!-- Modal Tambah & Kelola/Hapus Terapis -->
+        <!-- Modal Terapis -->
         <div v-if="showAddTherapistModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] space-y-4">
           <h4 class="font-serif text-sm font-bold text-[#5a4633]">Kelola Terapis (Tambah / Hapus)</h4>
           <div class="flex gap-2">
@@ -807,10 +800,9 @@ const resetForm = () => {
           <button @click="resetForm" type="button" class="py-3 px-4 bg-[#fffdfa] text-[#5a4633] border border-[#ebdcc3] font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-[#f4ecd8] transition-all">🔄 Reset</button>
           <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">💾 Simpan DB</button>
         </div>
-
       </div>
 
-      <!-- KOLOM KANAN: LIVE PREVIEW INVOICE -->
+      <!-- INVOICE PREVIEW -->
       <div id="invoice-preview" class="lg:col-span-5 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 sticky top-6">
         <div class="text-center border-b border-[#ebdcc3] pb-6 mb-6 flex flex-col items-center">
           <img :src="logoImage" alt="Logo" class="w-16 h-16 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-2" />
@@ -880,9 +872,8 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 1.5: KALENDAR BOOKING WHATSAPP ================= -->
+    <!-- VIEW 1.5: KALENDAR BOOKING -->
     <div v-if="currentView === 'calendar'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
-      
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">📅 Kalendar Jadwal Booking WhatsApp</h3>
@@ -897,7 +888,7 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Modal Form Tambah Booking -->
+      <!-- Modal Booking -->
       <div v-if="showAddBookingModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp</h4>
         
@@ -959,7 +950,7 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Filter Bulan / Tahun Kalendar -->
+      <!-- Filter Bulan -->
       <div class="flex flex-wrap items-center justify-between bg-[#fffdfa] p-3 rounded-xl border border-[#ebdcc3] text-xs gap-3">
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-bold text-[#5a4633]">Pilih Bulan:</span>
@@ -973,7 +964,7 @@ const resetForm = () => {
         <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal</p>
       </div>
 
-      <!-- Tampilan Grid Kalendar Bulanan -->
+      <!-- Grid Kalendar -->
       <div class="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs w-full">
         <div class="font-bold text-[#b48a57] py-2">Ahad</div>
         <div class="font-bold text-[#5a4633] py-2">Senin</div>
@@ -990,20 +981,17 @@ const resetForm = () => {
                !d.dayNum ? 'bg-gray-50 border-transparent cursor-default' : 
                selectedCalendarDate === d.dateStr ? 'bg-[#f4ecd8] border-[#b48a57] shadow-sm' : 'bg-[#fffdfa] border-[#ebdcc3] hover:bg-amber-50/50'
              ]">
-          
           <span v-if="d.dayNum" class="font-bold text-xs" :class="selectedCalendarDate === d.dateStr ? 'text-[#b48a57]' : 'text-[#3e3529]'">{{ d.dayNum }}</span>
-
           <div v-if="d.dayNum && bookingList.filter(item => item.booking_date === d.dateStr).length > 0" class="my-auto">
             <span class="px-1.5 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
               {{ bookingList.filter(item => item.booking_date === d.dateStr).length }} sesi
             </span>
           </div>
-
           <span v-if="d.dayNum"></span>
         </div>
       </div>
 
-      <!-- Daftar Detail Booking untuk Tanggal yang Dipilih -->
+      <!-- Daftar Sesi Booking dengan Tombol Hapus -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">📋 Daftar Waktu Sesi Booking Tanggal: <span class="text-[#b48a57]">{{ selectedCalendarDate }}</span></h4>
 
@@ -1033,7 +1021,7 @@ const resetForm = () => {
               <p v-if="book.notes" class="text-gray-500 italic bg-[#fdfbf7] p-2 rounded border border-[#ebdcc3]">Pesan WA: "{{ book.notes }}"</p>
             </div>
 
-            <!-- Tombol Aksi Booking (Termasuk Hapus Sesi yang Selalu Tampil) -->
+            <!-- Tombol Aksi & Hapus Sesi -->
             <div class="flex flex-wrap gap-2">
               <button @click="useBookingForInvoice(book)" class="px-3 py-1.5 bg-[#2d7a4f] text-white rounded-lg font-bold text-[10px] shadow">
                 ✨ Buat Invois
@@ -1051,10 +1039,9 @@ const resetForm = () => {
           </div>
         </div>
       </div>
-
     </div>
 
-    <!-- ================= VIEW 2: HALAMAN DATABASE PELANGGAN ================= -->
+    <!-- VIEW 2: CUSTOMERS -->
     <div v-if="currentView === 'customers'" class="max-w-3xl mx-auto bg-white rounded-2xl p-6 shadow-xl border border-[#ebdcc3] space-y-4">
       <div class="flex justify-between items-center border-b border-[#f4ecd8] pb-3">
         <h3 class="font-serif text-lg font-bold text-[#5a4633]">👥 Database Pelanggan (Urut A-Z)</h3>
@@ -1075,7 +1062,7 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 3: HALAMAN RIWAYAT INVOIS ================= -->
+    <!-- VIEW 3: HISTORY -->
     <div v-if="currentView === 'history'" class="max-w-2xl mx-auto bg-white rounded-2xl p-6 shadow-xl border border-[#ebdcc3] space-y-4">
       <div class="flex justify-between items-center border-b border-[#f4ecd8] pb-3">
         <h3 class="font-serif text-lg font-bold text-[#5a4633]">📜 Riwayat Invois</h3>
@@ -1103,9 +1090,8 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 4: HALAMAN DASHBOARD STATISTIK ================= -->
+    <!-- VIEW 4: DASHBOARD -->
     <div v-if="currentView === 'dashboard'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
-      
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">📊 Dashboard Statistik & Analitik</h3>
@@ -1245,7 +1231,6 @@ const resetForm = () => {
           </div>
         </div>
       </div>
-
     </div>
 
   </div>
