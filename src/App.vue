@@ -439,6 +439,22 @@ const saveNewTherapistToDB = async () => {
   }
 }
 
+// Fungsi Hapus Terapis dari Database
+const deleteTherapistFromDB = async (thpId, thpName) => {
+  if (!confirm(`Adakah anda pasti ingin memadam terapis "${thpName}"?`)) return
+  try {
+    const { error } = await supabase.from('yhs_therapists').delete().eq('id', thpId)
+    if (error) throw error
+    showToast(`Terapis ${thpName} berhasil dipadam!`)
+    if (selectedTherapist.value === thpName) {
+      selectedTherapist.value = ''
+    }
+    fetchData()
+  } catch (err) {
+    showToast('Gagal memadam terapis: ' + err.message, 'error')
+  }
+}
+
 const saveNewServiceToDB = async () => {
   if (!newServiceName.value || newServicePrice.value <= 0) return showToast('Mohon isi nama dan harga layanan.', 'error')
   try {
@@ -656,7 +672,6 @@ const resetForm = () => {
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <!-- KONTROL PEMBATAS KHUSUS AGAR TIDAK MELUAP DI SAFARI IPHONE -->
           <div class="w-full overflow-hidden">
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Tarikh Kunjungan</label>
             <div class="w-full max-w-full overflow-hidden rounded-xl border border-[#ebdcc3] bg-[#fffdfa] focus-within:ring-2 focus-within:ring-[#b48a57]">
@@ -680,7 +695,7 @@ const resetForm = () => {
           <div>
             <div class="flex justify-between items-center mb-1">
               <label class="text-xs font-bold uppercase tracking-wider text-[#8c7355]">Terapis / Therapist</label>
-              <button @click="showAddTherapistModal = true" type="button" class="text-[10px] font-bold text-[#b48a57] hover:underline">+ Terapis Baru</button>
+              <button @click="showAddTherapistModal = true" type="button" class="text-[10px] font-bold text-[#b48a57] hover:underline">+ Terapis Baru / Urus</button>
             </div>
             <select v-model="selectedTherapist" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]">
               <option value="">-- Tanpa Terapis --</option>
@@ -693,13 +708,27 @@ const resetForm = () => {
           </div>
         </div>
 
-        <!-- Modal Tambah Terapis Baru -->
-        <div v-if="showAddTherapistModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] space-y-3">
-          <h4 class="font-serif text-sm font-bold text-[#5a4633]">Tambah Terapis Baru ke Database</h4>
-          <input v-model="newTherapistName" type="text" placeholder="Nama Terapis Baru" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
-          <div class="flex justify-end gap-2">
-            <button @click="showAddTherapistModal = false" type="button" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold">Batal</button>
-            <button @click="saveNewTherapistToDB" type="button" class="px-3 py-1 bg-[#2d7a4f] text-white rounded-lg text-xs font-bold">Simpan Permanen</button>
+        <!-- Modal Tambah & Kelola/Hapus Terapis -->
+        <div v-if="showAddTherapistModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] space-y-4">
+          <h4 class="font-serif text-sm font-bold text-[#5a4633]">Kelola Terapis (Tambah / Hapus)</h4>
+          
+          <!-- Input Tambah Baru -->
+          <div class="flex gap-2">
+            <input v-model="newTherapistName" type="text" placeholder="Nama Terapis Baru" class="flex-1 px-3 py-2 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none" />
+            <button @click="saveNewTherapistToDB" type="button" class="px-3 py-2 bg-[#2d7a4f] text-white rounded-lg text-xs font-bold">Simpan</button>
+          </div>
+
+          <!-- Daftar Terapis dengan Tombol Hapus -->
+          <div class="space-y-1.5 max-h-40 overflow-y-auto bg-white p-2 rounded-lg border border-[#ebdcc3]">
+            <p class="text-[10px] font-bold text-gray-400 uppercase">Daftar Terapis Aktif:</p>
+            <div v-for="thp in availableTherapists" :key="thp.id" class="flex justify-between items-center text-xs py-1 px-2 border-b border-gray-50 last:border-none">
+              <span class="font-semibold text-[#3e3529]">{{ thp.name }}</span>
+              <button @click="deleteTherapistFromDB(thp.id, thp.name)" type="button" class="text-red-500 hover:text-red-700 font-bold text-[10px] bg-red-50 px-2 py-0.5 rounded">🗑️ Hapus</button>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-1">
+            <button @click="showAddTherapistModal = false" type="button" class="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold">Tutup</button>
           </div>
         </div>
 
@@ -707,8 +736,8 @@ const resetForm = () => {
           <div class="flex justify-between items-center mb-4">
             <h3 class="font-serif text-lg font-bold text-[#5a4633]">Pilih Perkhidmatan / Select Services</h3>
             <div class="flex gap-2">
-              <button @click="showAddServiceModal = true" type="button" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-1.5 rounded-lg hover:bg-[#725c43] transition-colors">+ Treatment Baru</button>
-              <button @click="addServiceRow" type="button" class="text-xs font-bold bg-[#f4ecd8] text-[#5a4633] px-3 py-1.5 rounded-lg hover:bg-[#ebdcc3] transition-colors">+ Item</button>
+              <button @click="showAddServiceModal = true" type="button" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-1.5 rounded-lg hover:bg-[#725c43] transition-colors">+ Menu Baru DB</button>
+              <button @click="addServiceRow" type="button" class="text-xs font-bold bg-[#f4ecd8] text-[#5a4633] px-3 py-1.5 rounded-lg hover:bg-[#ebdcc3] transition-colors">+ Baris</button>
             </div>
           </div>
 
@@ -884,15 +913,13 @@ const resetForm = () => {
             <input v-model="newBooking.customer_phone" type="text" placeholder="+673..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
           
-          <!-- Tanggal Booking -->
           <div class="w-full overflow-hidden">
             <label class="block font-bold text-[#8c7355] mb-1">Tanggal Booking</label>
             <div class="w-full max-w-full overflow-hidden rounded-lg border border-[#ebdcc3] bg-white">
-              <input v-model="newBooking.booking_date" type="date" class="w-full px-3 py-2 text-xs bg-transparent outline-none block box-border text-center sm:text-left" style="max-width: 100%;" />
+              <input v-model="newBooking.booking_date" type="date" class="w-full px-3 py-2 text-xs bg-transparent outline-none block box-border" style="max-width: 100%;" />
             </div>
           </div>
 
-          <!-- Jam Booking -->
           <div class="w-full overflow-hidden">
             <label class="block font-bold text-[#8c7355] mb-1">Jam / Waktu Sesi</label>
             <div class="w-full max-w-full overflow-hidden rounded-lg border border-[#ebdcc3] bg-white">
@@ -912,7 +939,6 @@ const resetForm = () => {
             <input v-model="newBooking.notes" type="text" placeholder="Cth: Pesan khusus..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
 
-          <!-- Pilihan Rawatan Lebih dari Satu (Checkbox dengan kotak pencarian) -->
           <div class="sm:col-span-2 space-y-2">
             <label class="block font-bold text-[#8c7355]">Pilih Rawatan dari Database (Bisa lebih dari 1)</label>
             <input v-model="bookingServiceSearchKeyword" type="text" placeholder="🔍 Cari nama rawatan..." class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none mb-2" />
@@ -998,7 +1024,6 @@ const resetForm = () => {
               </div>
               <p class="text-gray-600">📞 {{ book.customer_phone || '-' }}</p>
               
-              <!-- Menampilkan Daftar Rawatan yang Dipesan -->
               <div class="text-[#b48a57] font-semibold space-y-0.5">
                 <p class="text-[11px] uppercase font-bold text-gray-400">Rawatan Dipesan:</p>
                 <div v-for="(tr, ti) in book.treatments" :key="ti" class="text-xs">
