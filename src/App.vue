@@ -287,8 +287,17 @@ const deleteInvoiceHistory = async (invId, customerName) => {
   if (!confirm(`Adakah anda pasti ingin memadam invois ini? Jika ini adalah satu-satunya transaksi pelanggan "${customerName}", rekod pelanggan juga akan dipadam.`)) return
   try {
     // 1. Hapus invois dari tabel yhs_invoices
-    const { error: invErr } = await supabase.from('yhs_invoices').delete().eq('id', invId)
+    const { data: deletedData, error: invErr } = await supabase
+      .from('yhs_invoices')
+      .delete()
+      .eq('id', invId)
+      .select()
+
     if (invErr) throw invErr
+
+    if (!deletedData || deletedData.length === 0) {
+      throw new Error("Gagal menghapus invois dari database.")
+    }
 
     // 2. Periksa apakah pelanggan ini masih memiliki invois lain yang tersisa
     const remainingInvoices = invoiceHistory.value.filter(inv => inv.id !== invId)
@@ -296,18 +305,29 @@ const deleteInvoiceHistory = async (invId, customerName) => {
       inv => (inv.customer_name || '').trim().toLowerCase() === (customerName || '').trim().toLowerCase()
     )
 
-    // 3. Jika tidak ada invois lain tersisa, hapus juga data pelanggan dari yhs_customers
+    // 3. Jika tidak ada invois lain, hapus pelanggan dari tabel yhs_customers BERDASARKAN ID
     if (!hasOtherInvoices) {
-      const { error: custErr } = await supabase.from('yhs_customers').delete().ilike('name', customerName.trim())
-      if (custErr) {
-        console.error('Gagal memadam pelanggan terkait:', custErr.message)
+      // Cari data pelanggan di master allCustomers untuk mendapatkan ID-nya
+      const targetCust = allCustomers.value.find(
+        c => (c.name || '').trim().toLowerCase() === (customerName || '').trim().toLowerCase()
+      )
+
+      if (targetCust) {
+        const { error: custErr } = await supabase
+          .from('yhs_customers')
+          .delete()
+          .eq('id', targetCust.id) // Hapus menggunakan ID yang pasti akurat
+
+        if (custErr) {
+          console.error('Gagal memadam tabel pelanggan:', custErr.message)
+        }
       }
     }
 
-    showToast('🗑️ Invois berhasil dipadam dan rekod pelanggan diselaraskan!')
+    showToast('🗑️ Invois & rekod pelanggan berhasil dipadam!')
     fetchData()
   } catch (err) {
-    showToast('Gagal memadam invois: ' + err.message, 'error')
+    showToast('❌ Gagal memadam: ' + err.message, 'error')
   }
 }
 
