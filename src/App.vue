@@ -988,7 +988,7 @@ const resetForm = () => {
                 <input v-model="serviceSearchKeywords[index]" type="text" placeholder="🔍 Ketik untuk cari layanan..." 
                        class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none mb-2 focus:ring-1 focus:ring-[#b48a57]" />
                 <select @change="onServiceSelect(index, $event)" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none">
-                  <option value="">-- Pilih Rawatan dari DB --</option>
+                  <option value="">-- Pilih Rawatan --</option>
                   <option v-for="serv in getFilteredServices(index)" :key="serv.id" :value="serv.id" :selected="serv.id === item.service_id">
                     {{ serv.name }} (B$ {{ serv.default_price }})
                   </option>
@@ -1025,7 +1025,7 @@ const resetForm = () => {
           <button @click="handlePrint" type="button" class="py-3 px-4 bg-[#8c7355] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#725c43] transition-all">🖨️ Cetak / PDF</button>
           <button @click="copyInvoiceText" type="button" class="py-3 px-4 bg-[#2d7a4f] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#235e3c] transition-all">📋 Salin Teks</button>
           <button @click="resetForm" type="button" class="py-3 px-4 bg-[#fffdfa] text-[#5a4633] border border-[#ebdcc3] font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-[#f4ecd8] transition-all">🔄 Reset</button>
-          <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">💾 Simpan DB</button>
+          <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">💾 Simpan</button>
         </div>
 
       </div>
