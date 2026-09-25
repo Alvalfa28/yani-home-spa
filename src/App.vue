@@ -44,7 +44,7 @@ const newServicePrice = ref(0)
 const discountType = ref('percent')
 const discountValue = ref(0)
 
-// --- STATE FORM PENGELUARAN (EXPENSES) ---
+// --- STATE FORM PENGELUARAN (EXPENSES) & FILTER PERIODE ---
 const showAddExpenseModal = ref(false)
 const newExpense = ref({
   title: '',
@@ -55,14 +55,13 @@ const newExpense = ref({
 })
 const expenseCategories = ['Bahan & Produk', 'Gaji / Komisen', 'Utiliti & Sewa', 'Operasi Harian', 'Lain-lain']
 
-// --- STATE FILTER DASHBOARD ---
-const dashboardPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan'
-const selectedDateDaily = ref(new Date().toISOString().split('T')[0])
+const expensePeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan'
+const expenseDateDaily = ref(new Date().toISOString().split('T')[0])
 
 const currentYear = new Date().getFullYear()
-const selectedYearAnnual = ref(currentYear)
-const selectedMonth = ref(new Date().getMonth() + 1) // 1 - 12
-const selectedMonthYear = ref(currentYear)
+const expenseYearAnnual = ref(currentYear)
+const expenseMonth = ref(new Date().getMonth() + 1)
+const expenseMonthYear = ref(currentYear)
 
 const getWeekNumber = (date) => {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -72,6 +71,15 @@ const getWeekNumber = (date) => {
   return Math.ceil(((d - yearStart) / 86400000 + 1) / 7)
 }
 
+const expenseWeekNum = ref(getWeekNumber(new Date()))
+const expenseWeekYear = ref(currentYear)
+
+// --- STATE FILTER DASHBOARD ---
+const dashboardPeriod = ref('bulanan') 
+const selectedDateDaily = ref(new Date().toISOString().split('T')[0])
+const selectedYearAnnual = ref(currentYear)
+const selectedMonth = ref(new Date().getMonth() + 1)
+const selectedMonthYear = ref(currentYear)
 const selectedWeekNum = ref(getWeekNumber(new Date()))
 const selectedWeekYear = ref(currentYear)
 
@@ -119,16 +127,13 @@ const fetchData = async () => {
 
     const { data: bookData, error: bookErr } = await supabase.from('yhs_bookings').select('*').order('booking_date', { ascending: true })
     if (bookErr) {
-      console.warn('Tabel yhs_bookings belum dibuat:', bookErr.message)
       bookingList.value = []
     } else {
       bookingList.value = bookData || []
     }
 
-    // Ambil data pengeluaran (tabel yhs_expenses)
     const { data: expData, error: expErr } = await supabase.from('yhs_expenses').select('*').order('expense_date', { ascending: false })
     if (expErr) {
-      console.warn('Tabel yhs_expenses belum dibuat:', expErr.message)
       expenseList.value = []
     } else {
       expenseList.value = expData || []
@@ -161,7 +166,7 @@ const saveExpenseToDB = async () => {
 
     if (error) {
       if (error.code === '42P01') {
-        throw new Error("Tabel 'yhs_expenses' belum ada di Supabase. Jalankan SQL setup tabel pengeluaran.")
+        throw new Error("Tabel 'yhs_expenses' belum ada di Supabase.")
       }
       throw error
     }
@@ -194,17 +199,53 @@ const deleteExpenseFromDB = async (expId, expTitle) => {
   }
 }
 
-// Perhitungan Saldo Keseluruhan
-const totalIncomeAll = computed(() => {
-  return invoiceHistory.value.reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
+// --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN (BERDASARKAN PERIODE) ---
+const filteredExpensesByPeriod = computed(() => {
+  return expenseList.value.filter(exp => {
+    if (!exp.expense_date) return false
+    const expDate = new Date(exp.expense_date)
+
+    if (expensePeriod.value === 'harian') {
+      return exp.expense_date === expenseDateDaily.value
+    } 
+    else if (expensePeriod.value === 'mingguan') {
+      const expYear = expDate.getFullYear()
+      const expWeek = getWeekNumber(expDate)
+      return expWeek === Number(expenseWeekNum.value) && expYear === Number(expenseWeekYear.value)
+    } 
+    else if (expensePeriod.value === 'bulanan') {
+      return (expDate.getMonth() + 1) === Number(expenseMonth.value) && expDate.getFullYear() === Number(expenseMonthYear.value)
+    } 
+    else if (expensePeriod.value === 'tahunan') {
+      return expDate.getFullYear() === Number(expenseYearAnnual.value)
+    }
+    return true
+  })
 })
 
-const totalExpenseAll = computed(() => {
-  return expenseList.value.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0)
+const filteredIncomeForExpensePeriod = computed(() => {
+  return invoiceHistory.value.filter(inv => {
+    if (!inv.invoice_date) return false
+    const invDate = new Date(inv.invoice_date)
+    if (expensePeriod.value === 'harian') {
+      return inv.invoice_date === expenseDateDaily.value
+    } else if (expensePeriod.value === 'mingguan') {
+      return getWeekNumber(invDate) === Number(expenseWeekNum.value) && invDate.getFullYear() === Number(expenseWeekYear.value)
+    } else if (expensePeriod.value === 'bulanan') {
+      return (invDate.getMonth() + 1) === Number(expenseMonth.value) && invDate.getFullYear() === Number(expenseMonthYear.value)
+    } else if (expensePeriod.value === 'tahunan') {
+      return invDate.getFullYear() === Number(expenseYearAnnual.value)
+    }
+    return true
+  }).reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
 })
 
-const availableNetBalance = computed(() => {
-  return totalIncomeAll.value - totalExpenseAll.value
+const filteredExpenseTotal = computed(() => {
+  return filteredExpensesByPeriod.value.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0)
+})
+
+const filteredNetBalance = computed(() => {
+  return filteredIncomeForExpensePeriod.value - filteredExpenseTotal.value
 })
 
 // Filter Layanan untuk Booking
@@ -238,12 +279,7 @@ const saveBookingToDB = async () => {
 
     const { error } = await supabase.from('yhs_bookings').insert([payload])
 
-    if (error) {
-      if (error.code === '42P01') {
-        throw new Error("Tabel 'yhs_bookings' belum ada di database Supabase Anda.")
-      }
-      throw error
-    }
+    if (error) throw error
 
     showToast('📅 Booking WhatsApp berhasil dicatat ke kalendar!')
     showAddBookingModal.value = false
@@ -969,13 +1005,13 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 1.2: PENGELUARAN & SALDO TERSEDIA (FITUR BARU) ================= -->
+    <!-- ================= VIEW 1.2: PENGELUARAN & SALDO TERSEDIA (DENGAN FILTER PERIODE) ================= -->
     <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
       
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">💸 Kelola Pengeluaran & Saldo Tersedia</h3>
-          <p class="text-xs text-[#8c7355]">Pantau aliran kas masuk, pengeluaran operasional, dan sisa saldo bersih</p>
+          <p class="text-xs text-[#8c7355]">Pantau aliran kas masuk, pengeluaran operasional, dan sisa saldo bersih berdasarkan periode</p>
         </div>
         
         <div class="flex items-center gap-3">
@@ -986,26 +1022,74 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- KARTU RINGKASAN SALDO & KEUANGAN (SAING MELENGKAPI) -->
+      <!-- FILTER PERIODE PENGELUARAN (HARIAN / MINGGUAN / BULANAN / TAHUNAN) -->
+      <div class="space-y-4">
+        <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
+          <button @click="expensePeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'harian' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
+          <button @click="expensePeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'mingguan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
+          <button @click="expensePeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'bulanan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
+          <button @click="expensePeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'tahunan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Tahunan</button>
+        </div>
+
+        <div class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div v-if="expensePeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
+            <input v-model="expenseDateDaily" type="date" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+
+          <div v-if="expensePeriod === 'mingguan'" class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Minggu Ke:</span>
+            <select v-model.number="expenseWeekNum" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="w in 52" :key="w" :value="w">Minggu ke-{{ w }}</option>
+            </select>
+            <span class="font-bold text-[#5a4633]">Tahun:</span>
+            <select v-model.number="expenseWeekYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <div v-if="expensePeriod === 'bulanan'" class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Bulan:</span>
+            <select v-model.number="expenseMonth" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="m in 12" :key="m" :value="m">Bulan {{ m }}</option>
+            </select>
+            <span class="font-bold text-[#5a4633]">Tahun:</span>
+            <select v-model.number="expenseMonthYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <div v-if="expensePeriod === 'tahunan'" class="flex items-center gap-2 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Pilih Tahun:</span>
+            <select v-model.number="expenseYearAnnual" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <span class="text-gray-500 italic">Menampilkan data periode terpilih</span>
+        </div>
+      </div>
+
+      <!-- KARTU RINGKASAN SALDO & KEUANGAN (BERDASARKAN PERIODE) -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
-          <p class="text-2xl font-serif font-bold text-emerald-900">{{ formatCurrency(totalIncomeAll) }}</p>
-          <p class="text-[10px] text-emerald-600">Akumulasi seluruh invois lunas</p>
+          <p class="text-2xl font-serif font-bold text-emerald-900">{{ formatCurrency(filteredIncomeForExpensePeriod) }}</p>
+          <p class="text-[10px] text-emerald-600">Pendapatan pada periode ini</p>
         </div>
 
         <div class="p-5 rounded-2xl bg-red-50 border border-red-200 text-center space-y-1">
           <p class="text-xs font-bold text-red-800 uppercase tracking-wider">📤 Total Pengeluaran</p>
-          <p class="text-2xl font-serif font-bold text-red-900">{{ formatCurrency(totalExpenseAll) }}</p>
-          <p class="text-[10px] text-red-600">Akumulasi biaya & operasional</p>
+          <p class="text-2xl font-serif font-bold text-red-900">{{ formatCurrency(filteredExpenseTotal) }}</p>
+          <p class="text-[10px] text-red-600">Pengeluaran pada periode ini</p>
         </div>
 
         <div class="p-5 rounded-2xl bg-amber-50 border border-amber-300 text-center space-y-1 shadow-sm">
           <p class="text-xs font-bold text-amber-800 uppercase tracking-wider">💰 Saldo Tersedia (Net)</p>
-          <p class="text-2xl font-serif font-bold" :class="availableNetBalance >= 0 ? 'text-[#b48a57]' : 'text-red-600'">
-            {{ formatCurrency(availableNetBalance) }}
+          <p class="text-2xl font-serif font-bold" :class="filteredNetBalance >= 0 ? 'text-[#b48a57]' : 'text-red-600'">
+            {{ formatCurrency(filteredNetBalance) }}
           </p>
-          <p class="text-[10px] text-gray-600">Sisa saldo bersih saat ini</p>
+          <p class="text-[10px] text-gray-600">Sisa saldo bersih periode ini</p>
         </div>
       </div>
 
@@ -1049,16 +1133,16 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- DAFTAR RIWAYAT PENGELUARAN -->
+      <!-- DAFTAR RIWAYAT PENGELUARAN (TERFILTER) -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
-        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📋 Rekod Riwayat Pengeluaran</h4>
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📋 Rekod Riwayat Pengeluaran ({{ filteredExpensesByPeriod.length }} Rekod)</h4>
 
-        <div v-if="expenseList.length === 0" class="text-xs text-gray-500 text-center py-8 italic">
-          Belum ada rekod pengeluaran dicatat.
+        <div v-if="filteredExpensesByPeriod.length === 0" class="text-xs text-gray-500 text-center py-8 italic">
+          Tidak ada rekod pengeluaran pada periode ini.
         </div>
 
         <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-          <div v-for="exp in expenseList" :key="exp.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
+          <div v-for="exp in filteredExpensesByPeriod" :key="exp.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
             <div class="space-y-1">
               <div class="flex items-center gap-2">
                 <span class="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold text-[10px]">{{ exp.category }}</span>
@@ -1360,18 +1444,7 @@ const resetForm = () => {
         <div v-if="dashboardPeriod === 'bulanan'" class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
           <span class="font-bold text-[#5a4633]">Bulan:</span>
           <select v-model.number="selectedMonth" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
-            <option :value="1">Bulan 1 (Januari)</option>
-            <option :value="2">Bulan 2 (Februari)</option>
-            <option :value="3">Bulan 3 (Mac)</option>
-            <option :value="4">Bulan 4 (April)</option>
-            <option :value="5">Bulan 5 (Mei)</option>
-            <option :value="6">Bulan 6 (Jun)</option>
-            <option :value="7">Bulan 7 (Julai)</option>
-            <option :value="8">Bulan 8 (Ogos)</option>
-            <option :value="9">Bulan 9 (September)</option>
-            <option :value="10">Bulan 10 (Oktober)</option>
-            <option :value="11">Bulan 11 (November)</option>
-            <option :value="12">Bulan 12 (Disember)</option>
+            <option v-for="m in 12" :key="m" :value="m">Bulan {{ m }}</option>
           </select>
           <span class="font-bold text-[#5a4633]">Tahun:</span>
           <select v-model.number="selectedMonthYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
