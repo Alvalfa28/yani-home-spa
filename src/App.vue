@@ -59,7 +59,7 @@ const newExpense = ref({
 })
 const expenseCategories = ['Bahan & Produk', 'Gaji / Komisen', 'Utiliti & Sewa', 'Operasi Harian', 'Lain-lain']
 
-const expensePeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan'
+const expensePeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
 const expenseDateDaily = ref(new Date().toISOString().split('T')[0])
 
 const currentYear = new Date().getFullYear()
@@ -79,7 +79,7 @@ const expenseWeekNum = ref(getWeekNumber(new Date()))
 const expenseWeekYear = ref(currentYear)
 
 // --- STATE FILTER PELANGGAN (CUSTOMERS) ---
-const customerPeriod = ref('bulanan') 
+const customerPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
 const customerDateDaily = ref(new Date().toISOString().split('T')[0])
 const customerWeekNum = ref(getWeekNumber(new Date()))
 const customerWeekYear = ref(currentYear)
@@ -88,7 +88,7 @@ const customerMonthYear = ref(currentYear)
 const customerYearAnnual = ref(currentYear)
 
 // --- STATE FILTER RIWAYAT INVOIS (HISTORY) ---
-const historyPeriod = ref('bulanan') 
+const historyPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
 const historyDateDaily = ref(new Date().toISOString().split('T')[0])
 const historyWeekNum = ref(getWeekNumber(new Date()))
 const historyWeekYear = ref(currentYear)
@@ -97,7 +97,7 @@ const historyMonthYear = ref(currentYear)
 const historyYearAnnual = ref(currentYear)
 
 // --- STATE FILTER DASHBOARD ---
-const dashboardPeriod = ref('bulanan') 
+const dashboardPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
 const selectedDateDaily = ref(new Date().toISOString().split('T')[0])
 const selectedYearAnnual = ref(currentYear)
 const selectedMonth = ref(new Date().getMonth() + 1)
@@ -132,7 +132,7 @@ const showToast = (message, type = 'success') => {
 
 const isSubmitting = ref(false)
 
-// --- AMBIL DATA MASTER & TABEL DARI SUPABASE ---
+// --- AMBIL DATA MASTER & TABEL ---
 const fetchData = async () => {
   try {
     const { data: servData } = await supabase.from('yhs_services').select('*').order('name', { ascending: true })
@@ -285,6 +285,7 @@ const deleteExpenseFromDB = async (expId, expTitle) => {
 // --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN ---
 const filteredExpensesByPeriod = computed(() => {
   return expenseList.value.filter(exp => {
+    if (expensePeriod.value === 'semua') return true
     if (!exp.expense_date) return false
     const expDate = new Date(exp.expense_date)
 
@@ -308,6 +309,7 @@ const filteredExpensesByPeriod = computed(() => {
 
 const filteredIncomeForExpensePeriod = computed(() => {
   return invoiceHistory.value.filter(inv => {
+    if (expensePeriod.value === 'semua') return true
     if (!inv.invoice_date) return false
     const invDate = new Date(inv.invoice_date)
     if (expensePeriod.value === 'harian') {
@@ -334,6 +336,7 @@ const filteredNetBalance = computed(() => {
 // --- FILTERED CUSTOMERS BY PERIOD ---
 const filteredCustomersByPeriod = computed(() => {
   const periodInvoices = invoiceHistory.value.filter(inv => {
+    if (customerPeriod.value === 'semua') return true
     if (!inv.invoice_date) return false
     const invDate = new Date(inv.invoice_date)
     if (customerPeriod.value === 'harian') {
@@ -363,9 +366,9 @@ const filteredCustomersByPeriod = computed(() => {
 
   const activeCustomerNames = Object.keys(statsMap)
   const enriched = allCustomers.value
-    .filter(c => activeCustomerNames.includes(c.name.trim()))
+    .filter(c => customerPeriod.value === 'semua' ? true : activeCustomerNames.includes(c.name.trim()))
     .map(c => {
-      const stat = statsMap[c.name.trim()]
+      const stat = statsMap[c.name.trim()] || { count: 0, total: 0, lastDate: '-' }
       return {
         ...c,
         visitCount: stat.count,
@@ -389,6 +392,7 @@ const filteredCustomersByPeriod = computed(() => {
 // --- FILTERED HISTORY BY PERIOD ---
 const filteredHistoryList = computed(() => {
   return invoiceHistory.value.filter(inv => {
+    if (historyPeriod.value === 'semua') return true
     if (!inv.invoice_date) return false
     const invDate = new Date(inv.invoice_date)
 
@@ -569,6 +573,7 @@ const getFilteredServices = (index) => {
 
 const filteredInvoicesByPeriod = computed(() => {
   return invoiceHistory.value.filter(inv => {
+    if (dashboardPeriod.value === 'semua') return true
     if (!inv.invoice_date) return false
     const invDate = new Date(inv.invoice_date)
 
@@ -1177,9 +1182,10 @@ const resetForm = () => {
           <button @click="expensePeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'mingguan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
           <button @click="expensePeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'bulanan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
           <button @click="expensePeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'tahunan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Tahunan</button>
+          <button @click="expensePeriod = 'semua'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'semua' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🌐 Semua</button>
         </div>
 
-        <div class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
+        <div v-if="expensePeriod !== 'semua'" class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
           <div v-if="expensePeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
             <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
             <input v-model="expenseDateDaily" type="date" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
@@ -1222,13 +1228,13 @@ const resetForm = () => {
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
           <p class="text-2xl font-serif font-bold text-emerald-900">{{ formatCurrency(filteredIncomeForExpensePeriod) }}</p>
-          <p class="text-[10px] text-emerald-600">Pendapatan pada periode ini</p>
+          <p class="text-[10px] text-emerald-600">Pendapatan periode ini</p>
         </div>
 
         <div class="p-5 rounded-2xl bg-red-50 border border-red-200 text-center space-y-1">
           <p class="text-xs font-bold text-red-800 uppercase tracking-wider">📤 Total Pengeluaran</p>
           <p class="text-2xl font-serif font-bold text-red-900">{{ formatCurrency(filteredExpenseTotal) }}</p>
-          <p class="text-[10px] text-red-600">Pengeluaran pada periode ini</p>
+          <p class="text-[10px] text-red-600">Pengeluaran periode ini</p>
         </div>
 
         <div class="p-5 rounded-2xl bg-amber-50 border border-amber-300 text-center space-y-1 shadow-sm">
@@ -1236,7 +1242,7 @@ const resetForm = () => {
           <p class="text-2xl font-serif font-bold" :class="filteredNetBalance >= 0 ? 'text-[#b48a57]' : 'text-red-600'">
             {{ formatCurrency(filteredNetBalance) }}
           </p>
-          <p class="text-[10px] text-gray-600">Sisa saldo bersih periode ini</p>
+          <p class="text-[10px] text-gray-600">Sisa saldo bersih</p>
         </div>
       </div>
 
@@ -1496,7 +1502,7 @@ const resetForm = () => {
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">👥 Rekod Daftar Pelanggan Berdasarkan Periode</h3>
-          <p class="text-xs text-[#8c7355]">Pantau daftar kunjungan dan total belanja pelanggan per harian, mingguan, bulanan, atau tahunan</p>
+          <p class="text-xs text-[#8c7355]">Pantau daftar kunjungan dan total belanja pelanggan per harian, mingguan, bulanan, tahunan, atau semua</p>
         </div>
         <button @click="currentView = 'form'" class="text-xs font-bold bg-[#b48a57] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
       </div>
@@ -1508,9 +1514,10 @@ const resetForm = () => {
           <button @click="customerPeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'mingguan' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
           <button @click="customerPeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'bulanan' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
           <button @click="customerPeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'tahunan' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Tahunan</button>
+          <button @click="customerPeriod = 'semua'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'semua' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🌐 Semua</button>
         </div>
 
-        <div class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
+        <div v-if="customerPeriod !== 'semua'" class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
           <div v-if="customerPeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
             <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
             <input v-model="customerDateDaily" type="date" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
@@ -1575,7 +1582,7 @@ const resetForm = () => {
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">📜 Rekod Riwayat / Invois Berdasarkan Periode</h3>
-          <p class="text-xs text-[#8c7355]">Pantau senarai invois dan jumlah pendapatan transaksi per harian, mingguan, bulanan, atau tahunan</p>
+          <p class="text-xs text-[#8c7355]">Pantau senarai invois dan jumlah pendapatan transaksi per harian, mingguan, bulanan, tahunan, atau semua</p>
         </div>
         <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3b5998] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
       </div>
@@ -1587,9 +1594,10 @@ const resetForm = () => {
           <button @click="historyPeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'mingguan' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
           <button @click="historyPeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'bulanan' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
           <button @click="historyPeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'tahunan' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Tahunan</button>
+          <button @click="historyPeriod = 'semua'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'semua' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🌐 Semua</button>
         </div>
 
-        <div class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
+        <div v-if="historyPeriod !== 'semua'" class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
           <div v-if="historyPeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
             <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
             <input v-model="historyDateDaily" type="date" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
@@ -1657,19 +1665,20 @@ const resetForm = () => {
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">📊 Dashboard Statistik & Analitik</h3>
-          <p class="text-xs text-[#8c7355]">Analisis mendalam laporan harian, mingguan, bulanan, dan tahunan</p>
+          <p class="text-xs text-[#8c7355]">Analisis mendalam laporan harian, mingguan, bulanan, tahunan, atau semua</p>
         </div>
         <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3e3529] text-white px-4 py-2 rounded-xl shadow">Kembali ke Form</button>
       </div>
 
       <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
-        <button @click="dashboardPeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'harian' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Pilih Harian</button>
-        <button @click="dashboardPeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'mingguan' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Pilih Minggu</button>
-        <button @click="dashboardPeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'bulanan' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Pilih Bulan</button>
-        <button @click="dashboardPeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'tahunan' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Pilih Tahun</button>
+        <button @click="dashboardPeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'harian' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
+        <button @click="dashboardPeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'mingguan' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
+        <button @click="dashboardPeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'bulanan' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
+        <button @click="dashboardPeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'tahunan' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Tahunan</button>
+        <button @click="dashboardPeriod = 'semua'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="dashboardPeriod === 'semua' ? 'bg-[#b48a57] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🌐 Semua</button>
       </div>
 
-      <div class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
+      <div v-if="dashboardPeriod !== 'semua'" class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
         <div v-if="dashboardPeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
           <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
           <div class="w-full sm:w-48 overflow-hidden rounded-lg border border-[#ebdcc3] bg-white">
