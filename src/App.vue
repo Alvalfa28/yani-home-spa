@@ -21,6 +21,7 @@ const allCustomers = ref([])
 const invoiceHistory = ref([])
 const bookingList = ref([]) 
 const expenseList = ref([]) 
+const incomeList = ref([]) // State untuk Pemasukan Manual
 
 // State Autocomplete Pelanggan
 const showCustomerDropdown = ref(false)
@@ -48,8 +49,9 @@ const editServicePrice = ref(0)
 const discountType = ref('percent')
 const discountValue = ref(0)
 
-// --- STATE FORM PENGELUARAN (EXPENSES) & FILTER PERIODE ---
+// --- STATE FORM PENGELUARAN (EXPENSES) & EDIT ---
 const showAddExpenseModal = ref(false)
+const editingExpenseId = ref(null)
 const newExpense = ref({
   title: '',
   amount: 0,
@@ -58,6 +60,18 @@ const newExpense = ref({
   notes: ''
 })
 const expenseCategories = ['Bahan & Produk', 'Gaji / Komisen', 'Utiliti & Sewa', 'Operasi Harian', 'Lain-lain']
+
+// --- STATE FORM PEMASUKAN MANUAL (INCOMES) & EDIT ---
+const showAddIncomeModal = ref(false)
+const editingIncomeId = ref(null)
+const newIncome = ref({
+  title: '',
+  amount: 0,
+  income_date: new Date().toISOString().split('T')[0],
+  category: 'Pendapatan Usaha',
+  notes: ''
+})
+const incomeCategories = ['Pendapatan Usaha', 'Sumbangan / Modal', 'Lain-lain']
 
 const expensePeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
 const expenseDateDaily = ref(new Date().toISOString().split('T')[0])
@@ -160,6 +174,13 @@ const fetchData = async () => {
     } else {
       expenseList.value = expData || []
     }
+
+    const { data: incData, error: incErr } = await supabase.from('yhs_incomes').select('*').order('income_date', { ascending: false })
+    if (incErr) {
+      incomeList.value = []
+    } else {
+      incomeList.value = incData || []
+    }
   } catch (err) {
     console.error('Gagal memuat data:', err.message)
   }
@@ -230,8 +251,8 @@ const deleteServiceFromDB = async (servId, servName) => {
   }
 }
 
-// Simpan Pengeluaran Baru
-const saveExpenseToDB = async () => {
+// --- CRUD PENGELUARAN (TAMBAH, EDIT, HAPUS) ---
+const saveOrUpdateExpense = async () => {
   if (!newExpense.value.title || !newExpense.value.amount || newExpense.value.amount <= 0) {
     return showToast('Mohon isi Keterangan dan Jumlah Pengeluaran yang sah.', 'error')
   }
@@ -245,17 +266,20 @@ const saveExpenseToDB = async () => {
       notes: newExpense.value.notes.trim()
     }
 
-    const { error } = await supabase.from('yhs_expenses').insert([payload])
-
-    if (error) {
-      if (error.code === '42P01') {
-        throw new Error("Tabel pengeluaran belum diaktifkan.")
-      }
-      throw error
+    if (editingExpenseId.value) {
+      // Update pengeluaran
+      const { error } = await supabase.from('yhs_expenses').update(payload).eq('id', editingExpenseId.value)
+      if (error) throw error
+      showToast('💸 Pengeluaran berhasil diperbarui!')
+    } else {
+      // Simpan pengeluaran baru
+      const { error } = await supabase.from('yhs_expenses').insert([payload])
+      if (error) throw error
+      showToast('💸 Pengeluaran berhasil dicatat!')
     }
 
-    showToast('💸 Pengeluaran berhasil dicatat!')
     showAddExpenseModal.value = false
+    editingExpenseId.value = null
     newExpense.value = {
       title: '',
       amount: 0,
@@ -269,7 +293,18 @@ const saveExpenseToDB = async () => {
   }
 }
 
-// Hapus Pengeluaran
+const startEditExpense = (exp) => {
+  editingExpenseId.value = exp.id
+  newExpense.value = {
+    title: exp.title,
+    amount: exp.amount,
+    expense_date: exp.expense_date,
+    category: exp.category || 'Bahan & Produk',
+    notes: exp.notes || ''
+  }
+  showAddExpenseModal.value = true
+}
+
 const deleteExpenseFromDB = async (expId, expTitle) => {
   if (!confirm(`Adakah anda pasti ingin memadam rekod pengeluaran "${expTitle}"?`)) return
   try {
@@ -282,12 +317,74 @@ const deleteExpenseFromDB = async (expId, expTitle) => {
   }
 }
 
+// --- CRUD PEMASUKAN MANUAL (TAMBAH, EDIT, HAPUS) ---
+const saveOrUpdateIncome = async () => {
+  if (!newIncome.value.title || !newIncome.value.amount || newIncome.value.amount <= 0) {
+    return showToast('Mohon isi Keterangan dan Jumlah Pemasukan yang sah.', 'error')
+  }
+
+  try {
+    const payload = {
+      title: newIncome.value.title.trim(),
+      amount: Number(newIncome.value.amount),
+      income_date: newIncome.value.income_date,
+      category: newIncome.value.category,
+      notes: newIncome.value.notes.trim()
+    }
+
+    if (editingIncomeId.value) {
+      const { error } = await supabase.from('yhs_incomes').update(payload).eq('id', editingIncomeId.value)
+      if (error) throw error
+      showToast('📥 Pemasukan manual berhasil diperbarui!')
+    } else {
+      const { error } = await supabase.from('yhs_incomes').insert([payload])
+      if (error) throw error
+      showToast('📥 Pemasukan manual berhasil dicatat!')
+    }
+
+    showAddIncomeModal.value = false
+    editingIncomeId.value = null
+    newIncome.value = {
+      title: '',
+      amount: 0,
+      income_date: new Date().toISOString().split('T')[0],
+      category: 'Pendapatan Usaha',
+      notes: ''
+    }
+    fetchData()
+  } catch (err) {
+    showToast('Gagal menyimpan pemasukan: ' + err.message, 'error')
+  }
+}
+
+const startEditIncome = (inc) => {
+  editingIncomeId.value = inc.id
+  newIncome.value = {
+    title: inc.title,
+    amount: inc.amount,
+    income_date: inc.income_date,
+    category: inc.category || 'Pendapatan Usaha',
+    notes: inc.notes || ''
+  }
+  showAddIncomeModal.value = true
+}
+
+const deleteIncomeFromDB = async (incId, incTitle) => {
+  if (!confirm(`Adakah anda pasti ingin memadam rekod pemasukan "${incTitle}"?`)) return
+  try {
+    const { error } = await supabase.from('yhs_incomes').delete().eq('id', incId)
+    if (error) throw error
+    showToast(`Pemasukan "${incTitle}" berhasil dipadam!`)
+    fetchData()
+  } catch (err) {
+    showToast('Gagal memadam pemasukan: ' + err.message, 'error')
+  }
+}
+
 // --- FUNGSI HAPUS RIWAYAT INVOIS & DAMPAK KE PELANGGAN ---
 const deleteInvoiceHistory = async (invId, customerName) => {
   if (!confirm(`Adakah anda pasti ingin memadam invois ini? Jika ini adalah satu-satunya transaksi pelanggan "${customerName}", rekod pelanggan juga akan dipadam.`)) return
-  
   try {
-    // 1. Hapus invois dari tabel yhs_invoices
     const { data: deletedData, error: invErr } = await supabase
       .from('yhs_invoices')
       .delete()
@@ -300,13 +397,11 @@ const deleteInvoiceHistory = async (invId, customerName) => {
       throw new Error("Gagal menghapus invois dari database.")
     }
 
-    // 2. Periksa apakah pelanggan ini masih memiliki invois lain yang tersisa
     const remainingInvoices = invoiceHistory.value.filter(inv => inv.id !== invId)
     const hasOtherInvoices = remainingInvoices.some(
       inv => (inv.customer_name || '').trim().toLowerCase() === (customerName || '').trim().toLowerCase()
     )
 
-    // 3. Jika tidak ada invois lain, hapus pelanggan dari tabel yhs_customers
     if (!hasOtherInvoices) {
       const targetCust = allCustomers.value.find(
         c => (c.name || '').trim().toLowerCase() === (customerName || '').trim().toLowerCase()
@@ -318,9 +413,8 @@ const deleteInvoiceHistory = async (invId, customerName) => {
           .delete()
           .eq('id', targetCust.id)
 
-        // Jika gagal menghapus pelanggan, tampilkan pesan error aslinya
         if (custErr) {
-          throw new Error("Invois terhapus, tapi gagal menghapus pelanggan: " + custErr.message)
+          console.error('Gagal memadam tabel pelanggan:', custErr.message)
         }
       }
     }
@@ -328,12 +422,11 @@ const deleteInvoiceHistory = async (invId, customerName) => {
     showToast('🗑️ Invois & rekod pelanggan berhasil dipadam!')
     fetchData()
   } catch (err) {
-    console.error(err)
-    showToast('❌ ' + err.message, 'error')
+    showToast('❌ Gagal memadam: ' + err.message, 'error')
   }
 }
 
-// --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN ---
+// --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN & PEMASUKAN ---
 const filteredExpensesByPeriod = computed(() => {
   return expenseList.value.filter(exp => {
     if (expensePeriod.value === 'semua') return true
@@ -358,7 +451,29 @@ const filteredExpensesByPeriod = computed(() => {
   })
 })
 
-const filteredIncomeForExpensePeriod = computed(() => {
+const filteredIncomesByPeriod = computed(() => {
+  return incomeList.value.filter(inc => {
+    if (expensePeriod.value === 'semua') return true
+    if (!inc.income_date) return false
+    const incDate = new Date(inc.income_date)
+
+    if (expensePeriod.value === 'harian') {
+      return inc.income_date === expenseDateDaily.value
+    } 
+    else if (expensePeriod.value === 'mingguan') {
+      return getWeekNumber(incDate) === Number(expenseWeekNum.value) && incDate.getFullYear() === Number(expenseWeekYear.value)
+    } 
+    else if (expensePeriod.value === 'bulanan') {
+      return (incDate.getMonth() + 1) === Number(expenseMonth.value) && incDate.getFullYear() === Number(expenseMonthYear.value)
+    } 
+    else if (expensePeriod.value === 'tahunan') {
+      return incDate.getFullYear() === Number(expenseYearAnnual.value)
+    }
+    return true
+  })
+})
+
+const filteredInvoiceIncomeTotal = computed(() => {
   return invoiceHistory.value.filter(inv => {
     if (expensePeriod.value === 'semua') return true
     if (!inv.invoice_date) return false
@@ -376,12 +491,20 @@ const filteredIncomeForExpensePeriod = computed(() => {
   }).reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
 })
 
+const filteredManualIncomeTotal = computed(() => {
+  return filteredIncomesByPeriod.value.reduce((acc, inc) => acc + (Number(inc.amount) || 0), 0)
+})
+
+const filteredTotalIncome = computed(() => {
+  return filteredInvoiceIncomeTotal.value + filteredManualIncomeTotal.value
+})
+
 const filteredExpenseTotal = computed(() => {
   return filteredExpensesByPeriod.value.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0)
 })
 
 const filteredNetBalance = computed(() => {
-  return filteredIncomeForExpensePeriod.value - filteredExpenseTotal.value
+  return filteredTotalIncome.value - filteredExpenseTotal.value
 })
 
 // --- FILTERED CUSTOMERS BY PERIOD ---
@@ -934,7 +1057,7 @@ const resetForm = () => {
       </button>
       <button @click="currentView = 'expenses'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'expenses' ? 'bg-[#8c4343] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
-        💸 Pengeluaran ({{ expenseList.length }})
+        💸 Keuangan ({{ expenseList.length + incomeList.length }})
       </button>
       <button @click="currentView = 'customers'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'customers' ? 'bg-[#2d7a4f] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
@@ -1210,20 +1333,23 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 1.2: PENGELUARAN & SALDO TERSEDIA ================= -->
+    <!-- ================= VIEW 1.2: KEUANGAN (PEMASUKAN & PENGELUARAN) ================= -->
     <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
       
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
-          <h3 class="font-serif text-xl font-bold text-[#5a4633]">💸 Kelola Pengeluaran & Saldo Tersedia</h3>
-          <p class="text-xs text-[#8c7355]">Pantau aliran kas masuk, pengeluaran operasional, dan sisa saldo bersih berdasarkan periode</p>
+          <h3 class="font-serif text-xl font-bold text-[#5a4633]">💰 Kelola Keuangan (Pemasukan & Pengeluaran)</h3>
+          <p class="text-xs text-[#8c7355]">Pantau aliran kas masuk, pemasukan manual, pengeluaran operasional, dan sisa saldo bersih</p>
         </div>
         
-        <div class="flex items-center gap-3">
-          <button @click="showAddExpenseModal = true" class="text-xs font-bold bg-[#8c4343] text-white px-4 py-2.5 rounded-xl shadow hover:bg-[#723535] transition-all">
+        <div class="flex items-center gap-2 flex-wrap">
+          <button @click="editingIncomeId = null; newIncome = { title: '', amount: 0, income_date: new Date().toISOString().split('T')[0], category: 'Pendapatan Usaha', notes: '' }; showAddIncomeModal = true" class="text-xs font-bold bg-[#2d7a4f] text-white px-3 py-2.5 rounded-xl shadow hover:bg-[#235e3c] transition-all">
+            + Catat Pemasukan
+          </button>
+          <button @click="editingExpenseId = null; newExpense = { title: '', amount: 0, expense_date: new Date().toISOString().split('T')[0], category: 'Bahan & Produk', notes: '' }; showAddExpenseModal = true" class="text-xs font-bold bg-[#8c4343] text-white px-3 py-2.5 rounded-xl shadow hover:bg-[#723535] transition-all">
             + Catat Pengeluaran
           </button>
-          <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3e3529] text-white px-4 py-2.5 rounded-xl shadow">Kembali</button>
+          <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3e3529] text-white px-3 py-2.5 rounded-xl shadow">Kembali</button>
         </div>
       </div>
 
@@ -1278,8 +1404,8 @@ const resetForm = () => {
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
-          <p class="text-2xl font-serif font-bold text-emerald-900">{{ formatCurrency(filteredIncomeForExpensePeriod) }}</p>
-          <p class="text-[10px] text-emerald-600">Pendapatan periode ini</p>
+          <p class="text-2xl font-serif font-bold text-emerald-900">{{ formatCurrency(filteredTotalIncome) }}</p>
+          <p class="text-[10px] text-emerald-600">Invois ({{ formatCurrency(filteredInvoiceIncomeTotal) }}) + Manual ({{ formatCurrency(filteredManualIncomeTotal) }})</p>
         </div>
 
         <div class="p-5 rounded-2xl bg-red-50 border border-red-200 text-center space-y-1">
@@ -1297,8 +1423,55 @@ const resetForm = () => {
         </div>
       </div>
 
+      <!-- MODAL TAMBAH / EDIT PEMASUKAN MANUAL -->
+      <div v-if="showAddIncomeModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#2d7a4f] space-y-4 shadow-md w-full">
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">
+          {{ editingIncomeId ? '✏️ Edit Rekod Pemasukan Manual' : '✍️ Tambah Rekod Pemasukan Manual Baru' }}
+        </h4>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Keterangan / Sumber Pemasukan</label>
+            <input v-model="newIncome.title" type="text" placeholder="Cth: Tambahan modal / Sumber lain..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Jumlah (B$)</label>
+            <input v-model.number="newIncome.amount" type="number" min="0" placeholder="0.00" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none font-bold" />
+          </div>
+
+          <div class="w-full overflow-hidden">
+            <label class="block font-bold text-[#8c7355] mb-1">Tarikh Pemasukan</label>
+            <div class="w-full max-w-full overflow-hidden rounded-lg border border-[#ebdcc3] bg-white">
+              <input v-model="newIncome.income_date" type="date" class="w-full px-3 py-2 text-xs bg-transparent outline-none block box-border" style="max-width: 100%;" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Kategori Pemasukan</label>
+            <select v-model="newIncome.category" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="cat in incomeCategories" :key="cat" :value="cat">{{ cat }}</option>
+            </select>
+          </div>
+
+          <div class="sm:col-span-2">
+            <label class="block font-bold text-[#8c7355] mb-1">Catatan Tambahan (Opsional)</label>
+            <input v-model="newIncome.notes" type="text" placeholder="Keterangan tambahan..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button @click="showAddIncomeModal = false; editingIncomeId = null" type="button" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">Batal</button>
+          <button @click="saveOrUpdateIncome" type="button" class="px-4 py-2 bg-[#2d7a4f] text-white rounded-xl text-xs font-bold">
+            {{ editingIncomeId ? 'Simpan Perubahan' : 'Simpan Pemasukan' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- MODAL TAMBAH / EDIT PENGELUARAN -->
       <div v-if="showAddExpenseModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#8c4343] space-y-4 shadow-md w-full">
-        <h4 class="font-serif text-sm font-bold text-[#5a4633]">✍️ Tambah Rekod Pengeluaran Baru</h4>
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">
+          {{ editingExpenseId ? '✏️ Edit Rekod Pengeluaran' : '✍️ Tambah Rekod Pengeluaran Baru' }}
+        </h4>
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
           <div>
@@ -1331,19 +1504,52 @@ const resetForm = () => {
         </div>
 
         <div class="flex justify-end gap-2 pt-2">
-          <button @click="showAddExpenseModal = false" type="button" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">Batal</button>
-          <button @click="saveExpenseToDB" type="button" class="px-4 py-2 bg-[#8c4343] text-white rounded-xl text-xs font-bold">Simpan Pengeluaran</button>
+          <button @click="showAddExpenseModal = false; editingExpenseId = null" type="button" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">Batal</button>
+          <button @click="saveOrUpdateExpense" type="button" class="px-4 py-2 bg-[#8c4343] text-white rounded-xl text-xs font-bold">
+            {{ editingExpenseId ? 'Simpan Perubahan' : 'Simpan Pengeluaran' }}
+          </button>
         </div>
       </div>
 
+      <!-- DAFTAR PEMASUKAN MANUAL -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
-        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📋 Rekod Riwayat Pengeluaran ({{ filteredExpensesByPeriod.length }} Rekod)</h4>
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Rekod Pemasukan Manual ({{ filteredIncomesByPeriod.length }} Rekod)</h4>
 
-        <div v-if="filteredExpensesByPeriod.length === 0" class="text-xs text-gray-500 text-center py-8 italic">
+        <div v-if="filteredIncomesByPeriod.length === 0" class="text-xs text-gray-500 text-center py-6 italic">
+          Tidak ada rekod pemasukan manual pada periode ini.
+        </div>
+
+        <div v-else class="space-y-3 max-h-[350px] overflow-y-auto pr-2">
+          <div v-for="inc in filteredIncomesByPeriod" :key="inc.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">{{ inc.category }}</span>
+                <span class="font-bold text-gray-500">📅 {{ inc.income_date }}</span>
+              </div>
+              <p class="font-serif font-bold text-sm text-[#5a4633]">{{ inc.title }}</p>
+              <p v-if="inc.notes" class="text-gray-500 italic">Catatan: "{{ inc.notes }}"</p>
+            </div>
+
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
+              <span class="font-serif font-bold text-base text-emerald-700">+ {{ formatCurrency(inc.amount) }}</span>
+              <div class="flex gap-1.5">
+                <button @click="startEditIncome(inc)" class="px-2.5 py-1.5 bg-[#3b5998] text-white rounded-lg font-bold text-[10px] shadow hover:bg-[#324b81]">✏️ Edit</button>
+                <button @click="deleteIncomeFromDB(inc.id, inc.title)" class="px-2.5 py-1.5 bg-red-600 text-white rounded-lg font-bold text-[10px] shadow hover:bg-red-700">🗑️ Hapus</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DAFTAR PENGELUARAN -->
+      <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📤 Rekod Riwayat Pengeluaran ({{ filteredExpensesByPeriod.length }} Rekod)</h4>
+
+        <div v-if="filteredExpensesByPeriod.length === 0" class="text-xs text-gray-500 text-center py-6 italic">
           Tidak ada rekod pengeluaran pada periode ini.
         </div>
 
-        <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+        <div v-else class="space-y-3 max-h-[350px] overflow-y-auto pr-2">
           <div v-for="exp in filteredExpensesByPeriod" :key="exp.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
             <div class="space-y-1">
               <div class="flex items-center gap-2">
@@ -1354,11 +1560,12 @@ const resetForm = () => {
               <p v-if="exp.notes" class="text-gray-500 italic">Catatan: "{{ exp.notes }}"</p>
             </div>
 
-            <div class="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
               <span class="font-serif font-bold text-base text-red-600">- {{ formatCurrency(exp.amount) }}</span>
-              <button @click="deleteExpenseFromDB(exp.id, exp.title)" class="px-3 py-1.5 bg-red-600 text-white rounded-lg font-bold text-[10px] shadow hover:bg-red-700 transition-all">
-                🗑️ Hapus
-              </button>
+              <div class="flex gap-1.5">
+                <button @click="startEditExpense(exp)" class="px-2.5 py-1.5 bg-[#3b5998] text-white rounded-lg font-bold text-[10px] shadow hover:bg-[#324b81]">✏️ Edit</button>
+                <button @click="deleteExpenseFromDB(exp.id, exp.title)" class="px-2.5 py-1.5 bg-red-600 text-white rounded-lg font-bold text-[10px] shadow hover:bg-red-700">🗑️ Hapus</button>
+              </div>
             </div>
           </div>
         </div>
