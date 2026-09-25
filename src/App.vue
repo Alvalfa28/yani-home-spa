@@ -228,10 +228,16 @@ const updateServiceInDB = async () => {
     return showToast('Mohon isi nama dan harga layanan yang sah.', 'error')
   }
   try {
-    const { error } = await supabase.from('yhs_services')
+    const { data, error } = await supabase.from('yhs_services')
       .update({ name: editServiceName.value.trim(), default_price: Number(editServicePrice.value) })
       .eq('id', editingServiceId.value)
+      .select()
+    
     if (error) throw error
+    if (!data || data.length === 0) {
+      throw new Error("Layanan tidak ditemukan atau gagal diperbarui di database.")
+    }
+
     showToast('Layanan berhasil diperbarui!')
     cancelEditService()
     fetchData()
@@ -243,8 +249,16 @@ const updateServiceInDB = async () => {
 const deleteServiceFromDB = async (servId, servName) => {
   if (!confirm(`Adakah anda pasti ingin memadam layanan "${servName}"?`)) return
   try {
-    const { error } = await supabase.from('yhs_services').delete().eq('id', servId)
+    const { data, error } = await supabase.from('yhs_services')
+      .delete()
+      .eq('id', servId)
+      .select()
+
     if (error) throw error
+    if (!data || data.length === 0) {
+      throw new Error("Layanan tidak ditemukan di database.")
+    }
+
     showToast(`Layanan "${servName}" berhasil dipadam!`)
     fetchData()
   } catch (err) {
@@ -613,7 +627,6 @@ const saveBookingToDB = async () => {
     return showToast('❌ Jam selesai harus lebih besar dari jam mulai!', 'error')
   }
 
-  // Cek apakah jam sudah dibooking pada tanggal & terapis tersebut
   const targetTherapist = newBooking.value.therapist || 'Tanpa Terapis'
   const existingOnDate = bookingList.value.filter(b => 
     b.booking_date === newBooking.value.booking_date && 
@@ -641,7 +654,7 @@ const saveBookingToDB = async () => {
       customer_name: newBooking.value.customer_name.trim(),
       customer_phone: newBooking.value.customer_phone.trim(),
       booking_date: newBooking.value.booking_date,
-      booking_time: startTime, // legacy support
+      booking_time: startTime,
       booking_start_time: startTime,
       booking_end_time: endTime,
       therapist: targetTherapist,
@@ -829,7 +842,6 @@ const popularServicesStats = computed(() => {
   }))
 })
 
-// Therapist Performance + Bonus 10% Calculation
 const therapistPerformanceStats = computed(() => {
   const therapistData = {}
   filteredInvoicesByPeriod.value.forEach(inv => {
@@ -848,7 +860,7 @@ const therapistPerformanceStats = computed(() => {
     name,
     count: data.count,
     revenue: data.revenue,
-    bonus: data.revenue * 0.10, // Bonus 10% dari omset rawatan
+    bonus: data.revenue * 0.10,
     percentage: Math.round((data.count / maxVal) * 100)
   }))
 })
