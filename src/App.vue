@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from './lib/supabase'
 import logoImage from './assets/logo.jpg'
 
-// --- NAVIGATION / VIEW STATE ('form' | 'customers' | 'history' | 'dashboard' | 'calendar') ---
+// --- NAVIGATION / VIEW STATE ('form' | 'calendar' | 'expenses' | 'customers' | 'history' | 'dashboard') ---
 const currentView = ref('form') 
 
 // --- STATE FORM INPUT INVOICE ---
@@ -19,7 +19,8 @@ const availableServices = ref([])
 const availableTherapists = ref([])
 const allCustomers = ref([]) 
 const invoiceHistory = ref([])
-const bookingList = ref([]) // State untuk data booking kalendar
+const bookingList = ref([]) 
+const expenseList = ref([]) // State untuk data pengeluaran
 
 // State Autocomplete Pelanggan
 const showCustomerDropdown = ref(false)
@@ -29,7 +30,7 @@ const selectedTherapist = ref('')
 const showAddTherapistModal = ref(false)
 const newTherapistName = ref('')
 
-// State Search Keyword per baris layanan untuk pencarian cepat (Form Invois)
+// State Search Keyword per baris layanan
 const serviceSearchKeywords = ref([''])
 
 const selectedServices = ref([
@@ -42,6 +43,17 @@ const newServicePrice = ref(0)
 
 const discountType = ref('percent')
 const discountValue = ref(0)
+
+// --- STATE FORM PENGELUARAN (EXPENSES) ---
+const showAddExpenseModal = ref(false)
+const newExpense = ref({
+  title: '',
+  amount: 0,
+  expense_date: new Date().toISOString().split('T')[0],
+  category: 'Bahan & Produk',
+  notes: ''
+})
+const expenseCategories = ['Bahan & Produk', 'Gaji / Komisen', 'Utiliti & Sewa', 'Operasi Harian', 'Lain-lain']
 
 // --- STATE FILTER DASHBOARD ---
 const dashboardPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan'
@@ -69,7 +81,6 @@ const calendarViewYear = ref(currentYear)
 const selectedCalendarDate = ref(new Date().toISOString().split('T')[0])
 const showAddBookingModal = ref(false)
 
-// Form Input Booking Baru
 const newBooking = ref({
   customer_name: '',
   customer_phone: '',
@@ -91,7 +102,7 @@ const showToast = (message, type = 'success') => {
 
 const isSubmitting = ref(false)
 
-// --- AMBIL DATA MASTER & BOOKING DARI SUPABASE ---
+// --- AMBIL DATA MASTER & TABEL DARI SUPABASE ---
 const fetchData = async () => {
   try {
     const { data: servData } = await supabase.from('yhs_services').select('*').order('name', { ascending: true })
@@ -113,6 +124,15 @@ const fetchData = async () => {
     } else {
       bookingList.value = bookData || []
     }
+
+    // Ambil data pengeluaran (tabel yhs_expenses)
+    const { data: expData, error: expErr } = await supabase.from('yhs_expenses').select('*').order('expense_date', { ascending: false })
+    if (expErr) {
+      console.warn('Tabel yhs_expenses belum dibuat:', expErr.message)
+      expenseList.value = []
+    } else {
+      expenseList.value = expData || []
+    }
   } catch (err) {
     console.error('Gagal memuat data:', err.message)
   }
@@ -122,6 +142,71 @@ onMounted(() => {
   fetchData()
 })
 
+// Simpan Pengeluaran Baru ke Supabase
+const saveExpenseToDB = async () => {
+  if (!newExpense.value.title || !newExpense.value.amount || newExpense.value.amount <= 0) {
+    return showToast('Mohon isi Keterangan dan Jumlah Pengeluaran yang sah.', 'error')
+  }
+
+  try {
+    const payload = {
+      title: newExpense.value.title.trim(),
+      amount: Number(newExpense.value.amount),
+      expense_date: newExpense.value.expense_date,
+      category: newExpense.value.category,
+      notes: newExpense.value.notes.trim()
+    }
+
+    const { error } = await supabase.from('yhs_expenses').insert([payload])
+
+    if (error) {
+      if (error.code === '42P01') {
+        throw new Error("Tabel 'yhs_expenses' belum ada di Supabase. Jalankan SQL setup tabel pengeluaran.")
+      }
+      throw error
+    }
+
+    showToast('💸 Pengeluaran berhasil dicatat!')
+    showAddExpenseModal.value = false
+    newExpense.value = {
+      title: '',
+      amount: 0,
+      expense_date: new Date().toISOString().split('T')[0],
+      category: 'Bahan & Produk',
+      notes: ''
+    }
+    fetchData()
+  } catch (err) {
+    showToast('Gagal menyimpan pengeluaran: ' + err.message, 'error')
+  }
+}
+
+// Hapus Pengeluaran
+const deleteExpenseFromDB = async (expId, expTitle) => {
+  if (!confirm(`Adakah anda pasti ingin memadam rekod pengeluaran "${expTitle}"?`)) return
+  try {
+    const { error } = await supabase.from('yhs_expenses').delete().eq('id', expId)
+    if (error) throw error
+    showToast(`Pengeluaran "${expTitle}" berhasil dipadam!`)
+    fetchData()
+  } catch (err) {
+    showToast('Gagal memadam pengeluaran: ' + err.message, 'error')
+  }
+}
+
+// Perhitungan Saldo Keseluruhan
+const totalIncomeAll = computed(() => {
+  return invoiceHistory.value.reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
+})
+
+const totalExpenseAll = computed(() => {
+  return expenseList.value.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0)
+})
+
+const availableNetBalance = computed(() => {
+  return totalIncomeAll.value - totalExpenseAll.value
+})
+
 // Filter Layanan untuk Booking
 const filteredServicesForBooking = computed(() => {
   const keyword = (bookingServiceSearchKeyword.value || '').toLowerCase()
@@ -129,7 +214,6 @@ const filteredServicesForBooking = computed(() => {
   return availableServices.value.filter(s => s.name.toLowerCase().includes(keyword))
 })
 
-// Simpan Booking Baru ke Supabase
 const saveBookingToDB = async () => {
   if (!newBooking.value.customer_name || !newBooking.value.booking_date) {
     return showToast('Mohon isi Nama Pelanggan dan Tanggal Booking.', 'error')
@@ -156,7 +240,7 @@ const saveBookingToDB = async () => {
 
     if (error) {
       if (error.code === '42P01') {
-        throw new Error("Tabel 'yhs_bookings' belum ada di database Supabase Anda. Jalankan SQL setup terlebih dahulu.")
+        throw new Error("Tabel 'yhs_bookings' belum ada di database Supabase Anda.")
       }
       throw error
     }
@@ -179,7 +263,6 @@ const saveBookingToDB = async () => {
   }
 }
 
-// Ubah Status Booking (Selesai / Batal)
 const updateBookingStatus = async (id, newStatus) => {
   try {
     const { error } = await supabase.from('yhs_bookings').update({ status: newStatus }).eq('id', id)
@@ -191,7 +274,6 @@ const updateBookingStatus = async (id, newStatus) => {
   }
 }
 
-// Hapus Sesi Booking dari Database
 const deleteBookingFromDB = async (bookId, customerName) => {
   if (!confirm(`Adakah anda pasti ingin memadam sesi booking untuk "${customerName}"?`)) return
   try {
@@ -204,7 +286,6 @@ const deleteBookingFromDB = async (bookId, customerName) => {
   }
 }
 
-// Konversi Booking langsung ke Form Invois
 const useBookingForInvoice = (book) => {
   customerName.value = book.customer_name
   customerPhone.value = book.customer_phone
@@ -236,7 +317,6 @@ const useBookingForInvoice = (book) => {
   showToast(`✨ Memuat data ${book.customer_name} & ${book.treatments?.length || 1} rawatan ke Form Invois!`)
 }
 
-// Daftar Hari dalam Bulan yang Dipilih pada Kalendar
 const calendarDaysInMonth = computed(() => {
   const year = calendarViewYear.value
   const month = calendarViewMonth.value
@@ -260,7 +340,6 @@ const calendarDaysInMonth = computed(() => {
   return days
 })
 
-// Pengelompokan Booking pada Tanggal Terpilih Berdasarkan Daftar Terapis
 const bookingsGroupedByTherapist = computed(() => {
   const dateBookings = bookingList.value.filter(b => b.booking_date === selectedCalendarDate.value)
   const columns = {}
@@ -537,7 +616,7 @@ const totalDue = computed(() => {
 })
 
 const formatCurrency = (val) => {
-  return 'B$ ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return 'B$ ' + Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const invoiceNumber = computed(() => {
@@ -646,7 +725,11 @@ const resetForm = () => {
       </button>
       <button @click="currentView = 'calendar'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'calendar' ? 'bg-[#2d7a4f] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
-        📅 Kalendar Booking ({{ bookingList.filter(b=>b.status==='Terjadwal').length }})
+        📅 Kalendar ({{ bookingList.filter(b=>b.status==='Terjadwal').length }})
+      </button>
+      <button @click="currentView = 'expenses'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
+              :class="currentView === 'expenses' ? 'bg-[#8c4343] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
+        💸 Pengeluaran ({{ expenseList.length }})
       </button>
       <button @click="currentView = 'customers'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'customers' ? 'bg-[#2d7a4f] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
@@ -665,9 +748,7 @@ const resetForm = () => {
     <!-- ================= VIEW 1: HALAMAN UTAMA / FORMULIR INVOIS ================= -->
     <div v-if="currentView === 'form'" class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       
-      <!-- KOLOM KIRI: FORMULIR -->
       <div class="lg:col-span-7 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 space-y-6 print:hidden">
-        
         <h2 class="font-serif text-lg font-bold text-[#5a4633] border-b border-[#f4ecd8] pb-3">Maklumat Pelanggan / Customer Info</h2>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -729,7 +810,6 @@ const resetForm = () => {
           </div>
         </div>
 
-        <!-- Modal Tambah & Kelola Terapis -->
         <div v-if="showAddTherapistModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] space-y-4">
           <h4 class="font-serif text-sm font-bold text-[#5a4633]">Kelola Terapis (Tambah / Hapus)</h4>
           <div class="flex gap-2">
@@ -767,7 +847,6 @@ const resetForm = () => {
             </div>
           </div>
 
-          <!-- Bagian Item Layanan (Tanpa Kolom Harga) -->
           <div class="space-y-3">
             <div v-for="(item, index) in selectedServices" :key="index" class="bg-[#fffdfa] p-4 rounded-xl border border-[#ebdcc3] space-y-3 overflow-hidden">
               <div class="flex justify-between items-center">
@@ -786,7 +865,6 @@ const resetForm = () => {
                 </select>
               </div>
 
-              <!-- Grid Qty & Diskon (Kolom Harga Dihilangkan) -->
               <div class="grid grid-cols-2 gap-2">
                 <div>
                   <label class="text-[10px] uppercase font-bold text-[#8c7355]">Qty</label>
@@ -822,7 +900,6 @@ const resetForm = () => {
 
       </div>
 
-      <!-- KOLOM KANAN: LIVE PREVIEW INVOICE -->
       <div id="invoice-preview" class="lg:col-span-5 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 sticky top-6">
         <div class="text-center border-b border-[#ebdcc3] pb-6 mb-6 flex flex-col items-center">
           <img :src="logoImage" alt="Logo" class="w-16 h-16 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-2" />
@@ -892,6 +969,117 @@ const resetForm = () => {
       </div>
     </div>
 
+    <!-- ================= VIEW 1.2: PENGELUARAN & SALDO TERSEDIA (FITUR BARU) ================= -->
+    <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+      
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
+        <div>
+          <h3 class="font-serif text-xl font-bold text-[#5a4633]">💸 Kelola Pengeluaran & Saldo Tersedia</h3>
+          <p class="text-xs text-[#8c7355]">Pantau aliran kas masuk, pengeluaran operasional, dan sisa saldo bersih</p>
+        </div>
+        
+        <div class="flex items-center gap-3">
+          <button @click="showAddExpenseModal = true" class="text-xs font-bold bg-[#8c4343] text-white px-4 py-2.5 rounded-xl shadow hover:bg-[#723535] transition-all">
+            + Catat Pengeluaran
+          </button>
+          <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3e3529] text-white px-4 py-2.5 rounded-xl shadow">Kembali</button>
+        </div>
+      </div>
+
+      <!-- KARTU RINGKASAN SALDO & KEUANGAN (SAING MELENGKAPI) -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
+          <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
+          <p class="text-2xl font-serif font-bold text-emerald-900">{{ formatCurrency(totalIncomeAll) }}</p>
+          <p class="text-[10px] text-emerald-600">Akumulasi seluruh invois lunas</p>
+        </div>
+
+        <div class="p-5 rounded-2xl bg-red-50 border border-red-200 text-center space-y-1">
+          <p class="text-xs font-bold text-red-800 uppercase tracking-wider">📤 Total Pengeluaran</p>
+          <p class="text-2xl font-serif font-bold text-red-900">{{ formatCurrency(totalExpenseAll) }}</p>
+          <p class="text-[10px] text-red-600">Akumulasi biaya & operasional</p>
+        </div>
+
+        <div class="p-5 rounded-2xl bg-amber-50 border border-amber-300 text-center space-y-1 shadow-sm">
+          <p class="text-xs font-bold text-amber-800 uppercase tracking-wider">💰 Saldo Tersedia (Net)</p>
+          <p class="text-2xl font-serif font-bold" :class="availableNetBalance >= 0 ? 'text-[#b48a57]' : 'text-red-600'">
+            {{ formatCurrency(availableNetBalance) }}
+          </p>
+          <p class="text-[10px] text-gray-600">Sisa saldo bersih saat ini</p>
+        </div>
+      </div>
+
+      <!-- MODAL FORM TAMBAH PENGELUARAN -->
+      <div v-if="showAddExpenseModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#8c4343] space-y-4 shadow-md w-full">
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">✍️ Tambah Rekod Pengeluaran Baru</h4>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Keterangan / Nama Pengeluaran</label>
+            <input v-model="newExpense.title" type="text" placeholder="Cth: Beli minyak urut & herba..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Jumlah (B$)</label>
+            <input v-model.number="newExpense.amount" type="number" min="0" placeholder="0.00" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none font-bold" />
+          </div>
+
+          <div class="w-full overflow-hidden">
+            <label class="block font-bold text-[#8c7355] mb-1">Tarikh Pengeluaran</label>
+            <div class="w-full max-w-full overflow-hidden rounded-lg border border-[#ebdcc3] bg-white">
+              <input v-model="newExpense.expense_date" type="date" class="w-full px-3 py-2 text-xs bg-transparent outline-none block box-border" style="max-width: 100%;" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Kategori Pengeluaran</label>
+            <select v-model="newExpense.category" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="cat in expenseCategories" :key="cat" :value="cat">{{ cat }}</option>
+            </select>
+          </div>
+
+          <div class="sm:col-span-2">
+            <label class="block font-bold text-[#8c7355] mb-1">Catatan Tambahan (Opsional)</label>
+            <input v-model="newExpense.notes" type="text" placeholder="Keterangan tambahan..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button @click="showAddExpenseModal = false" type="button" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">Batal</button>
+          <button @click="saveExpenseToDB" type="button" class="px-4 py-2 bg-[#8c4343] text-white rounded-xl text-xs font-bold">Simpan Pengeluaran</button>
+        </div>
+      </div>
+
+      <!-- DAFTAR RIWAYAT PENGELUARAN -->
+      <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📋 Rekod Riwayat Pengeluaran</h4>
+
+        <div v-if="expenseList.length === 0" class="text-xs text-gray-500 text-center py-8 italic">
+          Belum ada rekod pengeluaran dicatat.
+        </div>
+
+        <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+          <div v-for="exp in expenseList" :key="exp.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold text-[10px]">{{ exp.category }}</span>
+                <span class="font-bold text-gray-500">📅 {{ exp.expense_date }}</span>
+              </div>
+              <p class="font-serif font-bold text-sm text-[#5a4633]">{{ exp.title }}</p>
+              <p v-if="exp.notes" class="text-gray-500 italic">Catatan: "{{ exp.notes }}"</p>
+            </div>
+
+            <div class="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
+              <span class="font-serif font-bold text-base text-red-600">- {{ formatCurrency(exp.amount) }}</span>
+              <button @click="deleteExpenseFromDB(exp.id, exp.title)" class="px-3 py-1.5 bg-red-600 text-white rounded-lg font-bold text-[10px] shadow hover:bg-red-700 transition-all">
+                🗑️ Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
     <!-- ================= VIEW 1.5: KALENDAR BOOKING ================= -->
     <div v-if="currentView === 'calendar'" class="max-w-7xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
       
@@ -909,7 +1097,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Modal Form Tambah Booking -->
       <div v-if="showAddBookingModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp</h4>
         
@@ -971,7 +1158,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Filter Bulan / Tahun Kalendar -->
       <div class="flex flex-wrap items-center justify-between bg-[#fffdfa] p-3 rounded-xl border border-[#ebdcc3] text-xs gap-3">
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-bold text-[#5a4633]">Pilih Bulan:</span>
@@ -985,7 +1171,6 @@ const resetForm = () => {
         <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal</p>
       </div>
 
-      <!-- Tampilan Grid Kalendar Bulanan -->
       <div class="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs w-full">
         <div class="font-bold text-[#b48a57] py-2">Ahad</div>
         <div class="font-bold text-[#5a4633] py-2">Senin</div>
@@ -1002,20 +1187,16 @@ const resetForm = () => {
                !d.dayNum ? 'bg-gray-50 border-transparent cursor-default' : 
                selectedCalendarDate === d.dateStr ? 'bg-[#f4ecd8] border-[#b48a57] shadow-sm' : 'bg-[#fffdfa] border-[#ebdcc3] hover:bg-amber-50/50'
              ]">
-          
           <span v-if="d.dayNum" class="font-bold text-xs" :class="selectedCalendarDate === d.dateStr ? 'text-[#b48a57]' : 'text-[#3e3529]'">{{ d.dayNum }}</span>
-
           <div v-if="d.dayNum && bookingList.filter(item => item.booking_date === d.dateStr).length > 0" class="my-auto">
             <span class="px-1.5 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
               {{ bookingList.filter(item => item.booking_date === d.dateStr).length }} sesi
             </span>
           </div>
-
           <span v-if="d.dayNum"></span>
         </div>
       </div>
 
-      <!-- TABEL KOLOM TERAPIS DINAMIS -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">
           📋 Jadwal Sesi Tanggal: <span class="text-[#b48a57] font-bold">{{ selectedCalendarDate }}</span>
