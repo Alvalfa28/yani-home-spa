@@ -21,7 +21,7 @@ const allCustomers = ref([])
 const invoiceHistory = ref([])
 const bookingList = ref([]) 
 const expenseList = ref([]) 
-const incomeList = ref([]) // State untuk Pemasukan Manual
+const incomeList = ref([]) 
 
 // State Autocomplete Pelanggan
 const showCustomerDropdown = ref(false)
@@ -267,12 +267,10 @@ const saveOrUpdateExpense = async () => {
     }
 
     if (editingExpenseId.value) {
-      // Update pengeluaran
       const { error } = await supabase.from('yhs_expenses').update(payload).eq('id', editingExpenseId.value)
       if (error) throw error
       showToast('💸 Pengeluaran berhasil diperbarui!')
     } else {
-      // Simpan pengeluaran baru
       const { error } = await supabase.from('yhs_expenses').insert([payload])
       if (error) throw error
       showToast('💸 Pengeluaran berhasil dicatat!')
@@ -999,6 +997,11 @@ const saveToSupabase = async () => {
 
 const handlePrint = () => { window.print() }
 
+// Fungsi Cetak Khusus Laporan Keuangan
+const printFinancialReport = () => {
+  window.print()
+}
+
 const copyInvoiceText = () => {
   let text = `*YANI HOME & SPA INVOICE*\nNo: ${invoiceNumber.value}\nTarikh: ${visitDate.value}\nNama: ${customerName.value || '-'}\nTelefon: ${customerPhone.value || '-'}\nTerapis: ${selectedTherapist.value || '-'}\n`
   if(remarks.value) text += `Catatan: ${remarks.value}\n`
@@ -1334,7 +1337,7 @@ const resetForm = () => {
     </div>
 
     <!-- ================= VIEW 1.2: KEUANGAN (PEMASUKAN & PENGELUARAN) ================= -->
-    <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+    <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
@@ -1343,6 +1346,9 @@ const resetForm = () => {
         </div>
         
         <div class="flex items-center gap-2 flex-wrap">
+          <button @click="printFinancialReport" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-2.5 rounded-xl shadow hover:bg-[#725c43] transition-all">
+            🖨️ Cetak Laporan Keuangan
+          </button>
           <button @click="editingIncomeId = null; newIncome = { title: '', amount: 0, income_date: new Date().toISOString().split('T')[0], category: 'Pendapatan Usaha', notes: '' }; showAddIncomeModal = true" class="text-xs font-bold bg-[#2d7a4f] text-white px-3 py-2.5 rounded-xl shadow hover:bg-[#235e3c] transition-all">
             + Catat Pemasukan
           </button>
@@ -1573,6 +1579,96 @@ const resetForm = () => {
 
     </div>
 
+    <!-- ================= LAPORAN KEUANGAN KHUSUS CETAK / PDF ================= -->
+    <div id="financial-report-print" class="hidden print:block bg-white text-[#3e3529] p-8 space-y-6 w-full">
+      <div class="text-center border-b border-[#ebdcc3] pb-4 mb-4 flex flex-col items-center">
+        <h2 class="font-serif text-2xl font-bold uppercase text-[#3e3529]">Yani Home & Spa</h2>
+        <p class="text-xs text-[#8c7355]">LAPORAN KECILAN KEUANGAN (FINANCIAL REPORT)</p>
+        <p class="text-[11px] text-gray-500 mt-1">Periode Filter: <span class="uppercase font-bold">{{ expensePeriod }}</span></p>
+      </div>
+
+      <!-- Ringkasan Keuangan Cetak -->
+      <div class="grid grid-cols-3 gap-4 border border-[#ebdcc3] p-4 rounded-xl text-xs">
+        <div class="text-center">
+          <p class="font-bold text-emerald-800 uppercase">Total Pemasukan</p>
+          <p class="text-base font-serif font-bold text-emerald-900 mt-1">{{ formatCurrency(filteredTotalIncome) }}</p>
+        </div>
+        <div class="text-center border-x border-[#ebdcc3]">
+          <p class="font-bold text-red-800 uppercase">Total Pengeluaran</p>
+          <p class="text-base font-serif font-bold text-red-900 mt-1">{{ formatCurrency(filteredExpenseTotal) }}</p>
+        </div>
+        <div class="text-center">
+          <p class="font-bold text-amber-800 uppercase">Saldo Bersih (Net)</p>
+          <p class="text-base font-serif font-bold text-[#b48a57] mt-1">{{ formatCurrency(filteredNetBalance) }}</p>
+        </div>
+      </div>
+
+      <!-- Tabel Pemasukan -->
+      <div class="space-y-2">
+        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">A. Rincian Pemasukan</h3>
+        <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
+          <thead>
+            <tr class="bg-[#f4ecd8] text-[#5a4633]">
+              <th class="border border-[#ebdcc3] p-2">Tarikh</th>
+              <th class="border border-[#ebdcc3] p-2">Sumber / Keterangan</th>
+              <th class="border border-[#ebdcc3] p-2">Kategori</th>
+              <th class="border border-[#ebdcc3] p-2 text-right">Jumlah</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="inc in filteredIncomesByPeriod" :key="inc.id">
+              <td class="border border-[#ebdcc3] p-2">{{ inc.income_date }}</td>
+              <td class="border border-[#ebdcc3] p-2">{{ inc.title }}</td>
+              <td class="border border-[#ebdcc3] p-2">{{ inc.category }}</td>
+              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-emerald-700">+ {{ formatCurrency(inc.amount) }}</td>
+            </tr>
+            <tr v-if="filteredIncomesByPeriod.length === 0">
+              <td colspan="4" class="border border-[#ebdcc3] p-3 text-center text-gray-400 italic">Tiada rekod pemasukan manual.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Tabel Pengeluaran -->
+      <div class="space-y-2">
+        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">B. Rincian Pengeluaran</h3>
+        <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
+          <thead>
+            <tr class="bg-[#f4ecd8] text-[#5a4633]">
+              <th class="border border-[#ebdcc3] p-2">Tarikh</th>
+              <th class="border border-[#ebdcc3] p-2">Keterangan / Item</th>
+              <th class="border border-[#ebdcc3] p-2">Kategori</th>
+              <th class="border border-[#ebdcc3] p-2 text-right">Jumlah</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="exp in filteredExpensesByPeriod" :key="exp.id">
+              <td class="border border-[#ebdcc3] p-2">{{ exp.expense_date }}</td>
+              <td class="border border-[#ebdcc3] p-2">{{ exp.title }}</td>
+              <td class="border border-[#ebdcc3] p-2">{{ exp.category }}</td>
+              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-red-600">- {{ formatCurrency(exp.amount) }}</td>
+            </tr>
+            <tr v-if="filteredExpensesByPeriod.length === 0">
+              <td colspan="4" class="border border-[#ebdcc3] p-3 text-center text-gray-400 italic">Tiada rekod pengeluaran.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-between pt-12 text-xs">
+        <div class="text-center">
+          <p>Disediakan Oleh,</p>
+          <div class="h-16"></div>
+          <p class="font-bold underline">Pengurusan Yani Home & Spa</p>
+        </div>
+        <div class="text-center">
+          <p>Disahkan Oleh,</p>
+          <div class="h-16"></div>
+          <p class="font-bold underline">Pengurus Besar</p>
+        </div>
+      </div>
+    </div>
+
     <!-- ================= VIEW 1.5: KALENDAR BOOKING ================= -->
     <div v-if="currentView === 'calendar'" class="max-w-7xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
       
@@ -1756,7 +1852,7 @@ const resetForm = () => {
     </div>
 
     <!-- ================= VIEW 2: HALAMAN DAFTAR PELANGGAN ================= -->
-    <div v-if="currentView === 'customers'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+    <div v-if="currentView === 'customers'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">👥 Rekod Daftar Pelanggan Berdasarkan Periode</h3>
@@ -1836,7 +1932,7 @@ const resetForm = () => {
     </div>
 
     <!-- ================= VIEW 3: HALAMAN RIWAYAT INVOIS ================= -->
-    <div v-if="currentView === 'history'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+    <div v-if="currentView === 'history'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">📜 Rekod Riwayat / Invois Berdasarkan Periode</h3>
@@ -1923,7 +2019,7 @@ const resetForm = () => {
     </div>
 
     <!-- ================= VIEW 4: HALAMAN DASHBOARD STATISTIK ================= -->
-    <div v-if="currentView === 'dashboard'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+    <div v-if="currentView === 'dashboard'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
@@ -2071,10 +2167,10 @@ const resetForm = () => {
   @page { size: portrait; margin: 10mm; }
   body, html { background-color: white !important; height: 100% !important; overflow: hidden !important; }
   body * { visibility: hidden; }
-  #invoice-preview, #invoice-preview * { visibility: visible; }
-  #invoice-preview {
-    position: absolute; left: 0; top: 0; width: 100% !important; max-height: 100vh !important;
-    border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important;
+  #invoice-preview, #invoice-preview *, #financial-report-print, #financial-report-print * { visibility: visible; }
+  #invoice-preview, #financial-report-print {
+    position: absolute; left: 0; top: 0; width: 100% !important; max-height: none !important;
+    border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; background: white !important;
   }
 }
 </style>
