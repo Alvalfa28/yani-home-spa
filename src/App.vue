@@ -285,6 +285,7 @@ const deleteExpenseFromDB = async (expId, expTitle) => {
 // --- FUNGSI HAPUS RIWAYAT INVOIS & DAMPAK KE PELANGGAN ---
 const deleteInvoiceHistory = async (invId, customerName) => {
   if (!confirm(`Adakah anda pasti ingin memadam invois ini? Jika ini adalah satu-satunya transaksi pelanggan "${customerName}", rekod pelanggan juga akan dipadam.`)) return
+  
   try {
     // 1. Hapus invois dari tabel yhs_invoices
     const { data: deletedData, error: invErr } = await supabase
@@ -305,9 +306,8 @@ const deleteInvoiceHistory = async (invId, customerName) => {
       inv => (inv.customer_name || '').trim().toLowerCase() === (customerName || '').trim().toLowerCase()
     )
 
-    // 3. Jika tidak ada invois lain, hapus pelanggan dari tabel yhs_customers BERDASARKAN ID
+    // 3. Jika tidak ada invois lain, hapus pelanggan dari tabel yhs_customers
     if (!hasOtherInvoices) {
-      // Cari data pelanggan di master allCustomers untuk mendapatkan ID-nya
       const targetCust = allCustomers.value.find(
         c => (c.name || '').trim().toLowerCase() === (customerName || '').trim().toLowerCase()
       )
@@ -316,10 +316,11 @@ const deleteInvoiceHistory = async (invId, customerName) => {
         const { error: custErr } = await supabase
           .from('yhs_customers')
           .delete()
-          .eq('id', targetCust.id) // Hapus menggunakan ID yang pasti akurat
+          .eq('id', targetCust.id)
 
+        // Jika gagal menghapus pelanggan, tampilkan pesan error aslinya
         if (custErr) {
-          console.error('Gagal memadam tabel pelanggan:', custErr.message)
+          throw new Error("Invois terhapus, tapi gagal menghapus pelanggan: " + custErr.message)
         }
       }
     }
@@ -327,7 +328,8 @@ const deleteInvoiceHistory = async (invId, customerName) => {
     showToast('🗑️ Invois & rekod pelanggan berhasil dipadam!')
     fetchData()
   } catch (err) {
-    showToast('❌ Gagal memadam: ' + err.message, 'error')
+    console.error(err)
+    showToast('❌ ' + err.message, 'error')
   }
 }
 
