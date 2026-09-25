@@ -997,7 +997,6 @@ const saveToSupabase = async () => {
 
 const handlePrint = () => { window.print() }
 
-// Fungsi Cetak Khusus Laporan Keuangan
 const printFinancialReport = () => {
   window.print()
 }
@@ -1339,28 +1338,32 @@ const resetForm = () => {
     <!-- ================= VIEW 1.2: KEUANGAN (PEMASUKAN & PENGELUARAN) ================= -->
     <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
+      <!-- HEADER & AKSI UTAMA (DIRAPIKAN) -->
+      <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-[#f4ecd8] pb-5 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">💰 Kelola Keuangan (Pemasukan & Pengeluaran)</h3>
-          <p class="text-xs text-[#8c7355]">Pantau aliran kas masuk, pemasukan manual, pengeluaran operasional, dan sisa saldo bersih</p>
+          <p class="text-xs text-[#8c7355] mt-0.5">Pantau aliran kas masuk, pemasukan manual, pengeluaran operasional, dan sisa saldo bersih</p>
         </div>
         
-        <div class="flex items-center gap-2 flex-wrap">
-          <button @click="printFinancialReport" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-2.5 rounded-xl shadow hover:bg-[#725c43] transition-all">
-            🖨️ Cetak Laporan Keuangan
+        <div class="flex items-center gap-2 flex-wrap w-full xl:w-auto justify-start xl:justify-end">
+          <button @click="printFinancialReport" class="text-xs font-bold bg-[#8c7355] text-white px-3.5 py-2.5 rounded-xl shadow hover:bg-[#725c43] transition-all flex items-center gap-1.5">
+            🖨️ Cetak Laporan
           </button>
-          <button @click="editingIncomeId = null; newIncome = { title: '', amount: 0, income_date: new Date().toISOString().split('T')[0], category: 'Pendapatan Usaha', notes: '' }; showAddIncomeModal = true" class="text-xs font-bold bg-[#2d7a4f] text-white px-3 py-2.5 rounded-xl shadow hover:bg-[#235e3c] transition-all">
-            + Catat Pemasukan
+          <button @click="editingIncomeId = null; newIncome = { title: '', amount: 0, income_date: new Date().toISOString().split('T')[0], category: 'Pendapatan Usaha', notes: '' }; showAddIncomeModal = true" class="text-xs font-bold bg-[#2d7a4f] text-white px-3.5 py-2.5 rounded-xl shadow hover:bg-[#235e3c] transition-all flex items-center gap-1.5">
+            + Pemasukan
           </button>
-          <button @click="editingExpenseId = null; newExpense = { title: '', amount: 0, expense_date: new Date().toISOString().split('T')[0], category: 'Bahan & Produk', notes: '' }; showAddExpenseModal = true" class="text-xs font-bold bg-[#8c4343] text-white px-3 py-2.5 rounded-xl shadow hover:bg-[#723535] transition-all">
-            + Catat Pengeluaran
+          <button @click="editingExpenseId = null; newExpense = { title: '', amount: 0, expense_date: new Date().toISOString().split('T')[0], category: 'Bahan & Produk', notes: '' }; showAddExpenseModal = true" class="text-xs font-bold bg-[#8c4343] text-white px-3.5 py-2.5 rounded-xl shadow hover:bg-[#723535] transition-all flex items-center gap-1.5">
+            + Pengeluaran
           </button>
-          <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3e3529] text-white px-3 py-2.5 rounded-xl shadow">Kembali</button>
+          <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3e3529] text-white px-3.5 py-2.5 rounded-xl shadow hover:bg-[#2c251d] transition-all">
+            Kembali
+          </button>
         </div>
       </div>
 
+      <!-- FILTER PERIODE KEUANGAN -->
       <div class="space-y-4">
-        <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
+        <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-3 rounded-2xl border border-[#ebdcc3]">
           <button @click="expensePeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'harian' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
           <button @click="expensePeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'mingguan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
           <button @click="expensePeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'bulanan' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
@@ -1407,6 +1410,7 @@ const resetForm = () => {
         </div>
       </div>
 
+      <!-- KARTU RINGKASAN KEUANGAN -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
