@@ -20,7 +20,7 @@ const availableTherapists = ref([])
 const allCustomers = ref([]) 
 const invoiceHistory = ref([])
 const bookingList = ref([]) 
-const expenseList = ref([]) // State untuk data pengeluaran
+const expenseList = ref([]) 
 
 // State Autocomplete Pelanggan
 const showCustomerDropdown = ref(false)
@@ -37,9 +37,13 @@ const selectedServices = ref([
   { service_id: '', name: '', qty: 1, price: 0, discount: 0 }
 ])
 
-const showAddServiceModal = ref(false)
+// State CRUD Menu Perkhidmatan (Layanan)
+const showManageServiceModal = ref(false)
 const newServiceName = ref('')
 const newServicePrice = ref(0)
+const editingServiceId = ref(null)
+const editServiceName = ref('')
+const editServicePrice = ref(0)
 
 const discountType = ref('percent')
 const discountValue = ref(0)
@@ -147,6 +151,67 @@ onMounted(() => {
   fetchData()
 })
 
+// --- CRUD FUNCTIONS UNTUK MENU PERKHIDMATAN (SERVICES) ---
+const saveNewServiceToDB = async () => {
+  if (!newServiceName.value.trim() || newServicePrice.value <= 0) {
+    return showToast('Mohon isi nama dan harga layanan yang sah.', 'error')
+  }
+  try {
+    const { error } = await supabase.from('yhs_services').insert([{ 
+      name: newServiceName.value.trim(), 
+      default_price: Number(newServicePrice.value) 
+    }])
+    if (error) throw error
+    showToast('Layanan berhasil disimpan permanen!')
+    newServiceName.value = ''
+    newServicePrice.value = 0
+    fetchData()
+  } catch (err) {
+    showToast('Gagal menyimpan layanan: ' + err.message, 'error')
+  }
+}
+
+const startEditService = (serv) => {
+  editingServiceId.value = serv.id
+  editServiceName.value = serv.name
+  editServicePrice.value = serv.default_price
+}
+
+const cancelEditService = () => {
+  editingServiceId.value = null
+  editServiceName.value = ''
+  editServicePrice.value = 0
+}
+
+const updateServiceInDB = async () => {
+  if (!editServiceName.value.trim() || editServicePrice.value <= 0) {
+    return showToast('Mohon isi nama dan harga layanan yang sah.', 'error')
+  }
+  try {
+    const { error } = await supabase.from('yhs_services')
+      .update({ name: editServiceName.value.trim(), default_price: Number(editServicePrice.value) })
+      .eq('id', editingServiceId.value)
+    if (error) throw error
+    showToast('Layanan berhasil diperbarui!')
+    cancelEditService()
+    fetchData()
+  } catch (err) {
+    showToast('Gagal memperbarui layanan: ' + err.message, 'error')
+  }
+}
+
+const deleteServiceFromDB = async (servId, servName) => {
+  if (!confirm(`Adakah anda pasti ingin memadam layanan "${servName}" dari database?`)) return
+  try {
+    const { error } = await supabase.from('yhs_services').delete().eq('id', servId)
+    if (error) throw error
+    showToast(`Layanan "${servName}" berhasil dipadam!`)
+    fetchData()
+  } catch (err) {
+    showToast('Gagal memadam layanan: ' + err.message, 'error')
+  }
+}
+
 // Simpan Pengeluaran Baru ke Supabase
 const saveExpenseToDB = async () => {
   if (!newExpense.value.title || !newExpense.value.amount || newExpense.value.amount <= 0) {
@@ -199,7 +264,7 @@ const deleteExpenseFromDB = async (expId, expTitle) => {
   }
 }
 
-// --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN (BERDASARKAN PERIODE) ---
+// --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN ---
 const filteredExpensesByPeriod = computed(() => {
   return expenseList.value.filter(exp => {
     if (!exp.expense_date) return false
@@ -591,21 +656,6 @@ const deleteTherapistFromDB = async (thpId, thpName) => {
   }
 }
 
-const saveNewServiceToDB = async () => {
-  if (!newServiceName.value || newServicePrice.value <= 0) return showToast('Mohon isi nama dan harga layanan.', 'error')
-  try {
-    const { error } = await supabase.from('yhs_services').insert([{ name: newServiceName.value, default_price: newServicePrice.value }])
-    if (error) throw error
-    showToast('Layanan berhasil disimpan permanen!')
-    newServiceName.value = ''
-    newServicePrice.value = 0
-    showAddServiceModal.value = false
-    fetchData()
-  } catch (err) {
-    showToast('Gagal menyimpan layanan: ' + err.message, 'error')
-  }
-}
-
 const onServiceSelect = (index, event) => {
   const serviceId = event.target.value
   const found = availableServices.value.find(s => s.id === serviceId)
@@ -868,19 +918,63 @@ const resetForm = () => {
           <div class="flex justify-between items-center mb-4">
             <h3 class="font-serif text-lg font-bold text-[#5a4633]">Pilih Perkhidmatan / Select Services</h3>
             <div class="flex gap-2">
-              <button @click="showAddServiceModal = true" type="button" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-1.5 rounded-lg hover:bg-[#725c43] transition-colors">+ Menu Baru DB</button>
+              <button @click="showManageServiceModal = true" type="button" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-1.5 rounded-lg hover:bg-[#725c43] transition-colors">⚙️ Kelola / Edit Menu DB</button>
               <button @click="addServiceRow" type="button" class="text-xs font-bold bg-[#f4ecd8] text-[#5a4633] px-3 py-1.5 rounded-lg hover:bg-[#ebdcc3] transition-colors">+ Baris</button>
             </div>
           </div>
 
-          <div v-if="showAddServiceModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] mb-4 space-y-3">
-            <h4 class="font-serif text-sm font-bold text-[#5a4633]">Tambah Layanan Baru ke Database</h4>
-            <input v-model="newServiceName" type="text" placeholder="Nama Layanan / Rawatan" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
-            <input v-model.number="newServicePrice" type="number" placeholder="Harga Default (B$)" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
-            <div class="flex justify-end gap-2">
-              <button @click="showAddServiceModal = false" type="button" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold">Batal</button>
-              <button @click="saveNewServiceToDB" type="button" class="px-3 py-1 bg-[#2d7a4f] text-white rounded-lg text-xs font-bold">Simpan Permanen</button>
+          <!-- MODAL KELOLA / CRUD MENU LAYANAN -->
+          <div v-if="showManageServiceModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] mb-4 space-y-4 shadow-md">
+            <div class="flex justify-between items-center border-b border-[#ebdcc3] pb-2">
+              <h4 class="font-serif text-sm font-bold text-[#5a4633]">⚙️ CRUD Menu Perkhidmatan (Tambah / Edit / Hapus)</h4>
+              <button @click="showManageServiceModal = false" class="text-xs font-bold text-gray-500 hover:text-gray-700">✕ Tutup</button>
             </div>
+
+            <!-- Form Tambah Layanan Baru -->
+            <div class="bg-white p-3 rounded-xl border border-[#ebdcc3] space-y-2">
+              <p class="text-[11px] font-bold text-[#8c7355] uppercase">➕ Tambah Layanan Baru</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input v-model="newServiceName" type="text" placeholder="Nama Rawatan Baru" class="px-3 py-2 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none" />
+                <input v-model.number="newServicePrice" type="number" placeholder="Harga Default (B$)" class="px-3 py-2 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none" />
+              </div>
+              <div class="flex justify-end pt-1">
+                <button @click="saveNewServiceToDB" type="button" class="px-3 py-1.5 bg-[#2d7a4f] text-white rounded-lg text-xs font-bold">Simpan Menu Baru</button>
+              </div>
+            </div>
+
+            <!-- Daftar Layanan untuk Diedit / Dihapus -->
+            <div class="space-y-2 max-h-60 overflow-y-auto bg-white p-3 rounded-xl border border-[#ebdcc3]">
+              <p class="text-[11px] font-bold text-[#8c7355] uppercase">📋 Daftar Layanan Tersedia ({{ availableServices.length }})</p>
+              
+              <div v-for="serv in availableServices" :key="serv.id" class="p-2.5 rounded-lg border border-gray-100 bg-[#fffdfa] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                
+                <!-- Mode Tampilan Normal -->
+                <div v-if="editingServiceId !== serv.id" class="flex-1">
+                  <p class="font-bold text-xs text-[#3e3529]">{{ serv.name }}</p>
+                  <p class="text-[11px] text-[#b48a57] font-semibold">B$ {{ serv.default_price }}</p>
+                </div>
+
+                <!-- Mode Form Edit -->
+                <div v-if="editingServiceId === serv.id" class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                  <input v-model="editServiceName" type="text" class="px-2 py-1 rounded border border-[#b48a57] text-xs bg-white outline-none" />
+                  <input v-model.number="editServicePrice" type="number" class="px-2 py-1 rounded border border-[#b48a57] text-xs bg-white outline-none" />
+                </div>
+
+                <!-- Tombol Aksi CRUD -->
+                <div class="flex items-center gap-1.5 self-end sm:self-center">
+                  <template v-if="editingServiceId !== serv.id">
+                    <button @click="startEditService(serv)" class="px-2.5 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px]">✏️ Edit</button>
+                    <button @click="deleteServiceFromDB(serv.id, serv.name)" class="px-2.5 py-1 bg-red-600 text-white rounded font-bold text-[10px]">🗑️ Hapus</button>
+                  </template>
+                  <template v-else>
+                    <button @click="updateServiceInDB" class="px-2.5 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px]">💾 Simpan</button>
+                    <button @click="cancelEditService" class="px-2.5 py-1 bg-gray-300 text-gray-700 rounded font-bold text-[10px]">Batal</button>
+                  </template>
+                </div>
+
+              </div>
+            </div>
+
           </div>
 
           <div class="space-y-3">
@@ -1005,7 +1099,7 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 1.2: PENGELUARAN & SALDO TERSEDIA (DENGAN FILTER PERIODE) ================= -->
+    <!-- ================= VIEW 1.2: PENGELUARAN & SALDO TERSEDIA ================= -->
     <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
       
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
@@ -1022,7 +1116,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- FILTER PERIODE PENGELUARAN (HARIAN / MINGGUAN / BULANAN / TAHUNAN) -->
       <div class="space-y-4">
         <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
           <button @click="expensePeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'harian' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
@@ -1070,7 +1163,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- KARTU RINGKASAN SALDO & KEUANGAN (BERDASARKAN PERIODE) -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
@@ -1093,7 +1185,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- MODAL FORM TAMBAH PENGELUARAN -->
       <div v-if="showAddExpenseModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#8c4343] space-y-4 shadow-md w-full">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">✍️ Tambah Rekod Pengeluaran Baru</h4>
         
@@ -1133,7 +1224,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- DAFTAR RIWAYAT PENGELUARAN (TERFILTER) -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">📋 Rekod Riwayat Pengeluaran ({{ filteredExpensesByPeriod.length }} Rekod)</h4>
 
