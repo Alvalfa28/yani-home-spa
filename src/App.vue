@@ -282,6 +282,35 @@ const deleteExpenseFromDB = async (expId, expTitle) => {
   }
 }
 
+// --- FUNGSI HAPUS RIWAYAT INVOIS & DAMPAK KE PELANGGAN ---
+const deleteInvoiceHistory = async (invId, customerName) => {
+  if (!confirm(`Adakah anda pasti ingin memadam invois ini? Jika ini adalah satu-satunya transaksi pelanggan "${customerName}", rekod pelanggan juga akan dipadam.`)) return
+  try {
+    // 1. Hapus invois dari tabel yhs_invoices
+    const { error: invErr } = await supabase.from('yhs_invoices').delete().eq('id', invId)
+    if (invErr) throw invErr
+
+    // 2. Periksa apakah pelanggan ini masih memiliki invois lain yang tersisa
+    const remainingInvoices = invoiceHistory.value.filter(inv => inv.id !== invId)
+    const hasOtherInvoices = remainingInvoices.some(
+      inv => (inv.customer_name || '').trim().toLowerCase() === (customerName || '').trim().toLowerCase()
+    )
+
+    // 3. Jika tidak ada invois lain tersisa, hapus juga data pelanggan dari yhs_customers
+    if (!hasOtherInvoices) {
+      const { error: custErr } = await supabase.from('yhs_customers').delete().ilike('name', customerName.trim())
+      if (custErr) {
+        console.error('Gagal memadam pelanggan terkait:', custErr.message)
+      }
+    }
+
+    showToast('🗑️ Invois berhasil dipadam dan rekod pelanggan diselaraskan!')
+    fetchData()
+  } catch (err) {
+    showToast('Gagal memadam invois: ' + err.message, 'error')
+  }
+}
+
 // --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN ---
 const filteredExpensesByPeriod = computed(() => {
   return expenseList.value.filter(exp => {
@@ -1644,7 +1673,12 @@ const resetForm = () => {
         <div v-for="(inv, idx) in filteredHistoryList" :key="inv.id || idx" class="p-4 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-2 shadow-sm">
           <div class="flex justify-between items-center">
             <span class="font-bold font-serif text-[#5a4633] text-sm">SW-{{ inv.invoice_date ? inv.invoice_date.replace(/-/g, '') : '20260801' }}-00{{ filteredHistoryList.length - idx }}</span>
-            <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">LUNAS</span>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">LUNAS</span>
+              <button @click="deleteInvoiceHistory(inv.id, inv.customer_name)" class="px-2.5 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700 transition-all">
+                🗑️ Hapus Invois
+              </button>
+            </div>
           </div>
           <div class="space-y-0.5 text-gray-600">
             <p>👤 <strong>{{ inv.customer_name }}</strong> ({{ inv.customer_wa || '-' }})</p>
