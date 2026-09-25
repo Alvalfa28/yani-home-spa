@@ -129,7 +129,8 @@ const newBooking = ref({
   customer_name: '',
   customer_phone: '',
   booking_date: new Date().toISOString().split('T')[0],
-  booking_time: '10:00',
+  booking_start_time: '10:00',
+  booking_end_time: '11:00',
   therapist: '',
   selected_services: [],
   notes: ''
@@ -595,9 +596,39 @@ const filteredServicesForBooking = computed(() => {
   return availableServices.value.filter(s => s.name.toLowerCase().includes(keyword))
 })
 
+// Validasi Waktu Bentrok (Overlap Time Check)
+const isTimeOverlapping = (start1, end1, start2, end2) => {
+  return start1 < end2 && start2 < end1
+}
+
 const saveBookingToDB = async () => {
   if (!newBooking.value.customer_name || !newBooking.value.booking_date) {
     return showToast('Mohon isi Nama Pelanggan dan Tanggal Booking.', 'error')
+  }
+
+  const startTime = newBooking.value.booking_start_time || '10:00'
+  const endTime = newBooking.value.booking_end_time || '11:00'
+
+  if (startTime >= endTime) {
+    return showToast('❌ Jam selesai harus lebih besar dari jam mulai!', 'error')
+  }
+
+  // Cek apakah jam sudah dibooking pada tanggal & terapis tersebut
+  const targetTherapist = newBooking.value.therapist || 'Tanpa Terapis'
+  const existingOnDate = bookingList.value.filter(b => 
+    b.booking_date === newBooking.value.booking_date && 
+    (b.therapist === targetTherapist || targetTherapist === 'Tanpa Terapis' || !b.therapist || b.therapist === 'Tanpa Terapis') &&
+    b.status !== 'Batal'
+  )
+
+  const hasConflict = existingOnDate.some(b => {
+    const bStart = b.booking_start_time || b.booking_time || '10:00'
+    const bEnd = b.booking_end_time || '11:00'
+    return isTimeOverlapping(startTime, endTime, bStart, bEnd)
+  })
+
+  if (hasConflict) {
+    return showToast(`❌ Jam ${startTime} - ${endTime} sudah terisi/dibooking pada tanggal ini! Silakan pilih jam lain.`, 'error')
   }
 
   try {
@@ -610,8 +641,10 @@ const saveBookingToDB = async () => {
       customer_name: newBooking.value.customer_name.trim(),
       customer_phone: newBooking.value.customer_phone.trim(),
       booking_date: newBooking.value.booking_date,
-      booking_time: newBooking.value.booking_time,
-      therapist: newBooking.value.therapist || 'Tanpa Terapis',
+      booking_time: startTime, // legacy support
+      booking_start_time: startTime,
+      booking_end_time: endTime,
+      therapist: targetTherapist,
       treatments: chosenServicesObj,
       notes: newBooking.value.notes,
       status: 'Terjadwal'
@@ -627,7 +660,8 @@ const saveBookingToDB = async () => {
       customer_name: '',
       customer_phone: '',
       booking_date: selectedCalendarDate.value,
-      booking_time: '10:00',
+      booking_start_time: '10:00',
+      booking_end_time: '11:00',
       therapist: '',
       selected_services: [],
       notes: ''
@@ -667,7 +701,7 @@ const useBookingForInvoice = (book) => {
   customerPhone.value = book.customer_phone
   visitDate.value = book.booking_date
   selectedTherapist.value = book.therapist !== 'Tanpa Terapis' ? book.therapist : ''
-  remarks.value = `Dari Booking WA (${book.booking_time}): ${book.notes || '-'}`
+  remarks.value = `Dari Booking WA (${book.booking_start_time || book.booking_time} - ${book.booking_end_time || 'selesai'}): ${book.notes || '-'}`
   
   if (Array.isArray(book.treatments) && book.treatments.length > 0) {
     selectedServices.value = book.treatments.map(t => ({
@@ -723,12 +757,12 @@ const bookingsGroupedByTherapist = computed(() => {
   availableTherapists.value.forEach(thp => {
     columns[thp.name] = dateBookings
       .filter(b => b.therapist === thp.name)
-      .sort((a, b) => (a.booking_time || '00:00').localeCompare(b.booking_time || '00:00'))
+      .sort((a, b) => (a.booking_start_time || a.booking_time || '00:00').localeCompare(b.booking_start_time || b.booking_time || '00:00'))
   })
 
   const unassigned = dateBookings
     .filter(b => !b.therapist || b.therapist === 'Tanpa Terapis' || !availableTherapists.value.some(t => t.name === b.therapist))
-    .sort((a, b) => (a.booking_time || '00:00').localeCompare(b.booking_time || '00:00'))
+    .sort((a, b) => (a.booking_start_time || a.booking_time || '00:00').localeCompare(b.booking_start_time || b.booking_time || '00:00'))
   
   if (unassigned.length > 0 || Object.keys(columns).length === 0) {
     columns['Tanpa Terapis'] = unassigned
@@ -795,18 +829,27 @@ const popularServicesStats = computed(() => {
   }))
 })
 
+// Therapist Performance + Bonus 10% Calculation
 const therapistPerformanceStats = computed(() => {
-  const therapistCount = {}
+  const therapistData = {}
   filteredInvoicesByPeriod.value.forEach(inv => {
     const thp = inv.therapist || 'Tanpa Terapis'
-    therapistCount[thp] = (therapistCount[thp] || 0) + 1
+    if (!therapistData[thp]) {
+      therapistData[thp] = { count: 0, revenue: 0 }
+    }
+    therapistData[thp].count += 1
+    therapistData[thp].revenue += Number(inv.total_amount) || 0
   })
-  const sorted = Object.entries(therapistCount).sort((a, b) => b[1] - a[1])
-  const maxVal = sorted.length > 0 ? sorted[0][1] : 1
-  return sorted.map(([name, count]) => ({
+
+  const sorted = Object.entries(therapistData).sort((a, b) => b[1].count - a[1].count)
+  const maxVal = sorted.length > 0 ? sorted[0][1].count : 1
+
+  return sorted.map(([name, data]) => ({
     name,
-    count,
-    percentage: Math.round((count / maxVal) * 100)
+    count: data.count,
+    revenue: data.revenue,
+    bonus: data.revenue * 0.10, // Bonus 10% dari omset rawatan
+    percentage: Math.round((data.count / maxVal) * 100)
   }))
 })
 
@@ -1338,7 +1381,6 @@ const resetForm = () => {
     <!-- ================= VIEW 1.2: KEUANGAN (PEMASUKAN & PENGELUARAN) ================= -->
     <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       
-      <!-- HEADER & AKSI UTAMA (DIRAPIKAN) -->
       <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-[#f4ecd8] pb-5 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">💰 Kelola Keuangan (Pemasukan & Pengeluaran)</h3>
@@ -1361,7 +1403,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- FILTER PERIODE KEUANGAN -->
       <div class="space-y-4">
         <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-3 rounded-2xl border border-[#ebdcc3]">
           <button @click="expensePeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="expensePeriod === 'harian' ? 'bg-[#8c4343] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
@@ -1410,7 +1451,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- KARTU RINGKASAN KEUANGAN -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
@@ -1679,7 +1719,7 @@ const resetForm = () => {
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">📅 Kalendar Jadwal Booking Berdasarkan Terapis</h3>
-          <p class="text-xs text-[#8c7355]">Jadwal harian dikelompokkan otomatis ke dalam kolom masing-masing terapis</p>
+          <p class="text-xs text-[#8c7355]">Jadwal harian dikelompokkan otomatis ke dalam kolom masing-masing terapis (Sistem validasi jam bentrok aktif)</p>
         </div>
         
         <div class="flex items-center gap-3">
@@ -1691,7 +1731,7 @@ const resetForm = () => {
       </div>
 
       <div v-if="showAddBookingModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
-        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp</h4>
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp (Dilengkapi Jam Mulai & Selesai)</h4>
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
           <div>
@@ -1710,10 +1750,14 @@ const resetForm = () => {
             </div>
           </div>
 
-          <div class="w-full overflow-hidden">
-            <label class="block font-bold text-[#8c7355] mb-1">Jam / Waktu Sesi</label>
-            <div class="w-full max-w-full overflow-hidden rounded-lg border border-[#ebdcc3] bg-white">
-              <input v-model="newBooking.booking_time" type="time" class="w-full px-3 py-2 text-xs bg-transparent outline-none block box-border" style="max-width: 100%;" />
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-bold text-[#8c7355] mb-1">Jam Mulai</label>
+              <input v-model="newBooking.booking_start_time" type="time" class="w-full px-3 py-2 text-xs bg-white rounded-lg border border-[#ebdcc3] outline-none" />
+            </div>
+            <div>
+              <label class="block font-bold text-[#8c7355] mb-1">Jam Selesai</label>
+              <input v-model="newBooking.booking_end_time" type="time" class="w-full px-3 py-2 text-xs bg-white rounded-lg border border-[#ebdcc3] outline-none" />
             </div>
           </div>
 
@@ -1812,7 +1856,9 @@ const resetForm = () => {
 
               <div v-for="book in bookings" :key="book.id" class="p-3 rounded-lg border border-[#ebdcc3] bg-white text-xs space-y-2 shadow-sm">
                 <div class="flex justify-between items-center border-b border-gray-100 pb-1.5">
-                  <span class="font-bold text-xs bg-[#b48a57] text-white px-2 py-0.5 rounded">⏰ {{ book.booking_time }}</span>
+                  <span class="font-bold text-xs bg-[#b48a57] text-white px-2.5 py-0.5 rounded">
+                    ⏰ {{ book.booking_start_time || book.booking_time || '10:00' }} - {{ book.booking_end_time || 'Selesai' }}
+                  </span>
                   <span class="px-2 py-0.5 rounded text-[10px] font-bold"
                         :class="book.status === 'Terjadwal' ? 'bg-amber-100 text-amber-800' : book.status === 'Selesai' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'">
                     {{ book.status }}
@@ -2120,15 +2166,18 @@ const resetForm = () => {
 
       <div class="p-5 rounded-2xl bg-[#fffdfa] border border-[#ebdcc3] space-y-4">
         <div class="flex justify-between items-center">
-          <h4 class="font-serif text-sm font-bold text-[#5a4633]">👩‍⚕️ Grafik Performa Terapis (Jumlah Klien Ditangani)</h4>
-          <span class="text-[10px] font-bold text-[#8c7355] uppercase">Total Kunjungan Klien</span>
+          <h4 class="font-serif text-sm font-bold text-[#5a4633]">👩‍⚕️ Grafik Performa Terapis & Bonus 10% Bulanan</h4>
+          <span class="text-[10px] font-bold text-[#8c7355] uppercase">Klien & Omset Komisi</span>
         </div>
         <div v-if="therapistPerformanceStats.length === 0" class="text-xs text-gray-500 text-center py-4">Belum ada data terapis pada periode ini.</div>
-        <div v-else class="space-y-3">
-          <div v-for="thp in therapistPerformanceStats" :key="thp.name" class="space-y-1">
-            <div class="flex justify-between text-xs font-semibold text-[#3e3529]">
-              <span>{{ thp.name }}</span>
-              <span class="text-[#2d7a4f] font-bold">{{ thp.count }} pelanggan</span>
+        <div v-else class="space-y-4">
+          <div v-for="thp in therapistPerformanceStats" :key="thp.name" class="space-y-1.5 p-3 rounded-xl border border-[#ebdcc3] bg-[#fdfbf7]">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs font-semibold text-[#3e3529] gap-1">
+              <span class="font-bold text-sm text-[#5a4633]">{{ thp.name }} ({{ thp.count }} Klien)</span>
+              <div class="text-right">
+                <span class="text-[#8c7355] font-medium mr-2">Omset: B$ {{ formatNumberID(thp.revenue) }}</span>
+                <span class="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">🎁 Bonus 10%: B$ {{ formatNumberID(thp.bonus) }}</span>
+              </div>
             </div>
             <div class="w-full bg-[#f4ecd8] h-3 rounded-full overflow-hidden">
               <div class="bg-[#2d7a4f] h-full rounded-full transition-all duration-500" :style="{ width: thp.percentage + '%' }"></div>
