@@ -260,20 +260,17 @@ const calendarDaysInMonth = computed(() => {
   return days
 })
 
-// Pengelompokan Booking pada Tanggal Terpilih Berdasarkan Daftar Terapis (Kolom Dinamis)
+// Pengelompokan Booking pada Tanggal Terpilih Berdasarkan Daftar Terapis
 const bookingsGroupedByTherapist = computed(() => {
   const dateBookings = bookingList.value.filter(b => b.booking_date === selectedCalendarDate.value)
-  
   const columns = {}
   
-  // Masukkan setiap terapis yang terdaftar di master data sebagai kolom
   availableTherapists.value.forEach(thp => {
     columns[thp.name] = dateBookings
       .filter(b => b.therapist === thp.name)
       .sort((a, b) => (a.booking_time || '00:00').localeCompare(b.booking_time || '00:00'))
   })
 
-  // Kolom tambahan untuk Tanpa Terapis atau terapis lain jika ada
   const unassigned = dateBookings
     .filter(b => !b.therapist || b.therapist === 'Tanpa Terapis' || !availableTherapists.value.some(t => t.name === b.therapist))
     .sort((a, b) => (a.booking_time || '00:00').localeCompare(b.booking_time || '00:00'))
@@ -770,6 +767,7 @@ const resetForm = () => {
             </div>
           </div>
 
+          <!-- Bagian Item Layanan (Tanpa Kolom Harga) -->
           <div class="space-y-3">
             <div v-for="(item, index) in selectedServices" :key="index" class="bg-[#fffdfa] p-4 rounded-xl border border-[#ebdcc3] space-y-3 overflow-hidden">
               <div class="flex justify-between items-center">
@@ -788,14 +786,11 @@ const resetForm = () => {
                 </select>
               </div>
 
-              <div class="grid grid-cols-3 gap-2">
+              <!-- Grid Qty & Diskon (Kolom Harga Dihilangkan) -->
+              <div class="grid grid-cols-2 gap-2">
                 <div>
                   <label class="text-[10px] uppercase font-bold text-[#8c7355]">Qty</label>
                   <input v-model.number="item.qty" type="number" min="1" class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
-                </div>
-                <div>
-                  <label class="text-[10px] uppercase font-bold text-[#8c7355]">Harga</label>
-                  <input v-model.number="item.price" type="number" min="0" class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-sm bg-white outline-none" />
                 </div>
                 <div>
                   <label class="text-[10px] uppercase font-bold text-[#8c7355]">Diskon</label>
@@ -897,7 +892,7 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 1.5: KALENDAR BOOKING (KOLOM TERAPIS DINAMIS) ================= -->
+    <!-- ================= VIEW 1.5: KALENDAR BOOKING ================= -->
     <div v-if="currentView === 'calendar'" class="max-w-7xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
       
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
@@ -1020,20 +1015,17 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- TABEL KOLOM TERAPIS DINAMIS UNTUK TANGGAL TERPILIH -->
+      <!-- TABEL KOLOM TERAPIS DINAMIS -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">
-          📋 Jadwal Sesi Tanggal: <span class="text-[#b48a57] font-bold">{{ selectedCalendarDate }}</span> (Berdasarkan Kolom Terapis)
+          📋 Jadwal Sesi Tanggal: <span class="text-[#b48a57] font-bold">{{ selectedCalendarDate }}</span>
         </h4>
 
-        <!-- Container Kolom Terapis (Responsive Grid) -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
           
-          <!-- Looping setiap Terapis sebagai Kolom Tabel Dinamis -->
           <div v-for="(bookings, therapistName) in bookingsGroupedByTherapist" :key="therapistName" 
                class="bg-white rounded-xl border border-[#ebdcc3] shadow-sm overflow-hidden flex flex-col">
             
-            <!-- Header Kolom Terapis -->
             <div class="bg-[#5a4633] text-white px-4 py-3 flex justify-between items-center">
               <span class="font-serif font-bold text-sm tracking-wide">👩‍⚕️ Terapis: {{ therapistName }}</span>
               <span class="bg-[#b48a57] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
@@ -1041,14 +1033,12 @@ const resetForm = () => {
               </span>
             </div>
 
-            <!-- Isi Sesi Booking dalam Kolom -->
             <div class="p-3 space-y-3 flex-1 bg-[#fffdfa] max-h-[500px] overflow-y-auto">
               
               <div v-if="bookings.length === 0" class="text-xs text-gray-400 text-center py-8 italic">
                 Tidak ada sesi jadwal untuk {{ therapistName }} pada tanggal ini.
               </div>
 
-              <!-- Kartu Sesi Klien -->
               <div v-for="book in bookings" :key="book.id" class="p-3 rounded-lg border border-[#ebdcc3] bg-white text-xs space-y-2 shadow-sm">
                 
                 <div class="flex justify-between items-center border-b border-gray-100 pb-1.5">
@@ -1064,7 +1054,6 @@ const resetForm = () => {
                   <p class="text-gray-600 text-[11px]">📞 {{ book.customer_phone || '-' }}</p>
                 </div>
                 
-                <!-- Rawatan Dipesan -->
                 <div class="bg-[#fdfbf7] p-2 rounded border border-[#ebdcc3] space-y-0.5">
                   <p class="text-[10px] uppercase font-bold text-[#8c7355]">Rawatan Dipesan:</p>
                   <div v-for="(tr, ti) in book.treatments" :key="ti" class="text-[11px] text-[#3e3529] font-medium">
@@ -1074,7 +1063,6 @@ const resetForm = () => {
 
                 <p v-if="book.notes" class="text-gray-500 text-[11px] italic">Catatan: "{{ book.notes }}"</p>
 
-                <!-- Tombol Aksi Sesi -->
                 <div class="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
                   <button @click="useBookingForInvoice(book)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">
                     ✨ Buat Invois
@@ -1198,7 +1186,7 @@ const resetForm = () => {
             <option :value="5">Bulan 5 (Mei)</option>
             <option :value="6">Bulan 6 (Jun)</option>
             <option :value="7">Bulan 7 (Julai)</option>
-            <option :value="8">Bulan 8 (September)</option>
+            <option :value="8">Bulan 8 (Ogos)</option>
             <option :value="9">Bulan 9 (September)</option>
             <option :value="10">Bulan 10 (Oktober)</option>
             <option :value="11">Bulan 11 (November)</option>
