@@ -78,6 +78,24 @@ const getWeekNumber = (date) => {
 const expenseWeekNum = ref(getWeekNumber(new Date()))
 const expenseWeekYear = ref(currentYear)
 
+// --- STATE FILTER PELANGGAN (CUSTOMERS) ---
+const customerPeriod = ref('bulanan') 
+const customerDateDaily = ref(new Date().toISOString().split('T')[0])
+const customerWeekNum = ref(getWeekNumber(new Date()))
+const customerWeekYear = ref(currentYear)
+const customerMonth = ref(new Date().getMonth() + 1)
+const customerMonthYear = ref(currentYear)
+const customerYearAnnual = ref(currentYear)
+
+// --- STATE FILTER RIWAYAT INVOIS (HISTORY) ---
+const historyPeriod = ref('bulanan') 
+const historyDateDaily = ref(new Date().toISOString().split('T')[0])
+const historyWeekNum = ref(getWeekNumber(new Date()))
+const historyWeekYear = ref(currentYear)
+const historyMonth = ref(new Date().getMonth() + 1)
+const historyMonthYear = ref(currentYear)
+const historyYearAnnual = ref(currentYear)
+
 // --- STATE FILTER DASHBOARD ---
 const dashboardPeriod = ref('bulanan') 
 const selectedDateDaily = ref(new Date().toISOString().split('T')[0])
@@ -162,7 +180,7 @@ const saveNewServiceToDB = async () => {
       default_price: Number(newServicePrice.value) 
     }])
     if (error) throw error
-    showToast('Layanan berhasil disimpan permanen!')
+    showToast('Layanan baru berhasil disimpan!')
     newServiceName.value = ''
     newServicePrice.value = 0
     fetchData()
@@ -201,7 +219,7 @@ const updateServiceInDB = async () => {
 }
 
 const deleteServiceFromDB = async (servId, servName) => {
-  if (!confirm(`Adakah anda pasti ingin memadam layanan "${servName}" dari database?`)) return
+  if (!confirm(`Adakah anda pasti ingin memadam layanan "${servName}"?`)) return
   try {
     const { error } = await supabase.from('yhs_services').delete().eq('id', servId)
     if (error) throw error
@@ -212,7 +230,7 @@ const deleteServiceFromDB = async (servId, servName) => {
   }
 }
 
-// Simpan Pengeluaran Baru ke Supabase
+// Simpan Pengeluaran Baru
 const saveExpenseToDB = async () => {
   if (!newExpense.value.title || !newExpense.value.amount || newExpense.value.amount <= 0) {
     return showToast('Mohon isi Keterangan dan Jumlah Pengeluaran yang sah.', 'error')
@@ -231,7 +249,7 @@ const saveExpenseToDB = async () => {
 
     if (error) {
       if (error.code === '42P01') {
-        throw new Error("Tabel 'yhs_expenses' belum ada di Supabase.")
+        throw new Error("Tabel pengeluaran belum diaktifkan.")
       }
       throw error
     }
@@ -311,6 +329,87 @@ const filteredExpenseTotal = computed(() => {
 
 const filteredNetBalance = computed(() => {
   return filteredIncomeForExpensePeriod.value - filteredExpenseTotal.value
+})
+
+// --- FILTERED CUSTOMERS BY PERIOD ---
+const filteredCustomersByPeriod = computed(() => {
+  const periodInvoices = invoiceHistory.value.filter(inv => {
+    if (!inv.invoice_date) return false
+    const invDate = new Date(inv.invoice_date)
+    if (customerPeriod.value === 'harian') {
+      return inv.invoice_date === customerDateDaily.value
+    } else if (customerPeriod.value === 'mingguan') {
+      return getWeekNumber(invDate) === Number(customerWeekNum.value) && invDate.getFullYear() === Number(customerWeekYear.value)
+    } else if (customerPeriod.value === 'bulanan') {
+      return (invDate.getMonth() + 1) === Number(customerMonth.value) && invDate.getFullYear() === Number(customerMonthYear.value)
+    } else if (customerPeriod.value === 'tahunan') {
+      return invDate.getFullYear() === Number(customerYearAnnual.value)
+    }
+    return true
+  })
+
+  const statsMap = {}
+  periodInvoices.forEach(inv => {
+    const name = (inv.customer_name || '').trim()
+    if (!statsMap[name]) {
+      statsMap[name] = { count: 0, total: 0, lastDate: inv.invoice_date || '-' }
+    }
+    statsMap[name].count += 1
+    statsMap[name].total += Number(inv.total_amount) || 0
+    if (inv.invoice_date && inv.invoice_date > statsMap[name].lastDate) {
+      statsMap[name].lastDate = inv.invoice_date
+    }
+  })
+
+  const activeCustomerNames = Object.keys(statsMap)
+  const enriched = allCustomers.value
+    .filter(c => activeCustomerNames.includes(c.name.trim()))
+    .map(c => {
+      const stat = statsMap[c.name.trim()]
+      return {
+        ...c,
+        visitCount: stat.count,
+        totalSpent: stat.total,
+        lastVisit: stat.lastDate
+      }
+    })
+
+  enriched.sort((a, b) => a.name.localeCompare(b.name))
+
+  const groups = {}
+  enriched.forEach(cust => {
+    const firstLetter = cust.name.charAt(0).toUpperCase() || '#'
+    if (!groups[firstLetter]) groups[firstLetter] = []
+    groups[firstLetter].push(cust)
+  })
+
+  return groups
+})
+
+// --- FILTERED HISTORY BY PERIOD ---
+const filteredHistoryList = computed(() => {
+  return invoiceHistory.value.filter(inv => {
+    if (!inv.invoice_date) return false
+    const invDate = new Date(inv.invoice_date)
+
+    if (historyPeriod.value === 'harian') {
+      return inv.invoice_date === historyDateDaily.value
+    } 
+    else if (historyPeriod.value === 'mingguan') {
+      return getWeekNumber(invDate) === Number(historyWeekNum.value) && invDate.getFullYear() === Number(historyWeekYear.value)
+    } 
+    else if (historyPeriod.value === 'bulanan') {
+      return (invDate.getMonth() + 1) === Number(historyMonth.value) && invDate.getFullYear() === Number(historyMonthYear.value)
+    } 
+    else if (historyPeriod.value === 'tahunan') {
+      return invDate.getFullYear() === Number(historyYearAnnual.value)
+    }
+    return true
+  })
+})
+
+const filteredHistoryTotalAmount = computed(() => {
+  return filteredHistoryList.value.reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
 })
 
 // Filter Layanan untuk Booking
@@ -578,42 +677,6 @@ const formatNumberID = (val) => {
   return Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-const groupedAndSortedCustomers = computed(() => {
-  const statsMap = {}
-  invoiceHistory.value.forEach(inv => {
-    const name = (inv.customer_name || '').trim()
-    if (!statsMap[name]) {
-      statsMap[name] = { count: 0, total: 0, lastDate: inv.invoice_date || '-' }
-    }
-    statsMap[name].count += 1
-    statsMap[name].total += Number(inv.total_amount) || 0
-    if (inv.invoice_date && inv.invoice_date > statsMap[name].lastDate) {
-      statsMap[name].lastDate = inv.invoice_date
-    }
-  })
-
-  const enriched = allCustomers.value.map(c => {
-    const stat = statsMap[c.name.trim()] || { count: 0, total: 0, lastDate: '-' }
-    return {
-      ...c,
-      visitCount: stat.count,
-      totalSpent: stat.total,
-      lastVisit: stat.lastDate
-    }
-  })
-
-  enriched.sort((a, b) => a.name.localeCompare(b.name))
-
-  const groups = {}
-  enriched.forEach(cust => {
-    const firstLetter = cust.name.charAt(0).toUpperCase() || '#'
-    if (!groups[firstLetter]) groups[firstLetter] = []
-    groups[firstLetter].push(cust)
-  })
-
-  return groups
-})
-
 const filteredCustomers = computed(() => {
   if (!customerName.value) return []
   const keyword = customerName.value.toLowerCase()
@@ -717,7 +780,7 @@ const saveToSupabase = async () => {
   }
 
   isSubmitting.value = true
-  showToast('Menyimpan ke database...', 'success')
+  showToast('Menyimpan data...', 'success')
 
   try {
     const { error: invError } = await supabase.from('yhs_invoices').insert([{
@@ -746,7 +809,7 @@ const saveToSupabase = async () => {
       }])
     }
 
-    showToast('✅ Invois tersimpan & Pelanggan otomatis terdaftar!')
+    showToast('✅ Invois tersimpan & Pelanggan otomatis tercatat!')
     fetchData() 
   } catch (err) {
     showToast('❌ Gagal menyimpan: ' + err.message, 'error')
@@ -918,19 +981,18 @@ const resetForm = () => {
           <div class="flex justify-between items-center mb-4">
             <h3 class="font-serif text-lg font-bold text-[#5a4633]">Pilih Perkhidmatan / Select Services</h3>
             <div class="flex gap-2">
-              <button @click="showManageServiceModal = true" type="button" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-1.5 rounded-lg hover:bg-[#725c43] transition-colors">⚙️ Kelola / Edit Menu DB</button>
+              <button @click="showManageServiceModal = true" type="button" class="text-xs font-bold bg-[#8c7355] text-white px-3 py-1.5 rounded-lg hover:bg-[#725c43] transition-colors">⚙️ Kelola Layanan</button>
               <button @click="addServiceRow" type="button" class="text-xs font-bold bg-[#f4ecd8] text-[#5a4633] px-3 py-1.5 rounded-lg hover:bg-[#ebdcc3] transition-colors">+ Baris</button>
             </div>
           </div>
 
-          <!-- MODAL KELOLA / CRUD MENU LAYANAN -->
+          <!-- MODAL KELOLA LAYANAN -->
           <div v-if="showManageServiceModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] mb-4 space-y-4 shadow-md">
             <div class="flex justify-between items-center border-b border-[#ebdcc3] pb-2">
-              <h4 class="font-serif text-sm font-bold text-[#5a4633]">⚙️ CRUD Menu Perkhidmatan (Tambah / Edit / Hapus)</h4>
+              <h4 class="font-serif text-sm font-bold text-[#5a4633]">⚙️ Kelola Perkhidmatan (Tambah / Edit / Hapus)</h4>
               <button @click="showManageServiceModal = false" class="text-xs font-bold text-gray-500 hover:text-gray-700">✕ Tutup</button>
             </div>
 
-            <!-- Form Tambah Layanan Baru -->
             <div class="bg-white p-3 rounded-xl border border-[#ebdcc3] space-y-2">
               <p class="text-[11px] font-bold text-[#8c7355] uppercase">➕ Tambah Layanan Baru</p>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -942,25 +1004,20 @@ const resetForm = () => {
               </div>
             </div>
 
-            <!-- Daftar Layanan untuk Diedit / Dihapus -->
             <div class="space-y-2 max-h-60 overflow-y-auto bg-white p-3 rounded-xl border border-[#ebdcc3]">
               <p class="text-[11px] font-bold text-[#8c7355] uppercase">📋 Daftar Layanan Tersedia ({{ availableServices.length }})</p>
               
               <div v-for="serv in availableServices" :key="serv.id" class="p-2.5 rounded-lg border border-gray-100 bg-[#fffdfa] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                
-                <!-- Mode Tampilan Normal -->
                 <div v-if="editingServiceId !== serv.id" class="flex-1">
                   <p class="font-bold text-xs text-[#3e3529]">{{ serv.name }}</p>
                   <p class="text-[11px] text-[#b48a57] font-semibold">B$ {{ serv.default_price }}</p>
                 </div>
 
-                <!-- Mode Form Edit -->
                 <div v-if="editingServiceId === serv.id" class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
                   <input v-model="editServiceName" type="text" class="px-2 py-1 rounded border border-[#b48a57] text-xs bg-white outline-none" />
                   <input v-model.number="editServicePrice" type="number" class="px-2 py-1 rounded border border-[#b48a57] text-xs bg-white outline-none" />
                 </div>
 
-                <!-- Tombol Aksi CRUD -->
                 <div class="flex items-center gap-1.5 self-end sm:self-center">
                   <template v-if="editingServiceId !== serv.id">
                     <button @click="startEditService(serv)" class="px-2.5 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px]">✏️ Edit</button>
@@ -971,10 +1028,8 @@ const resetForm = () => {
                     <button @click="cancelEditService" class="px-2.5 py-1 bg-gray-300 text-gray-700 rounded font-bold text-[10px]">Batal</button>
                   </template>
                 </div>
-
               </div>
             </div>
-
           </div>
 
           <div class="space-y-3">
@@ -1025,7 +1080,7 @@ const resetForm = () => {
           <button @click="handlePrint" type="button" class="py-3 px-4 bg-[#8c7355] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#725c43] transition-all">🖨️ Cetak / PDF</button>
           <button @click="copyInvoiceText" type="button" class="py-3 px-4 bg-[#2d7a4f] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#235e3c] transition-all">📋 Salin Teks</button>
           <button @click="resetForm" type="button" class="py-3 px-4 bg-[#fffdfa] text-[#5a4633] border border-[#ebdcc3] font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-[#f4ecd8] transition-all">🔄 Reset</button>
-          <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">💾 Simpan</button>
+          <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">💾 Simpan Data</button>
         </div>
 
       </div>
@@ -1311,7 +1366,7 @@ const resetForm = () => {
           </div>
 
           <div class="sm:col-span-2 space-y-2">
-            <label class="block font-bold text-[#8c7355]">Pilih Rawatan dari Database (Bisa lebih dari 1)</label>
+            <label class="block font-bold text-[#8c7355]">Pilih Rawatan (Bisa lebih dari 1)</label>
             <input v-model="bookingServiceSearchKeyword" type="text" placeholder="🔍 Cari nama rawatan..." class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none mb-2" />
             
             <div class="max-h-44 overflow-y-auto space-y-1 bg-white p-3 rounded-xl border border-[#ebdcc3]">
@@ -1377,10 +1432,8 @@ const resetForm = () => {
         </h4>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
-          
           <div v-for="(bookings, therapistName) in bookingsGroupedByTherapist" :key="therapistName" 
                class="bg-white rounded-xl border border-[#ebdcc3] shadow-sm overflow-hidden flex flex-col">
-            
             <div class="bg-[#5a4633] text-white px-4 py-3 flex justify-between items-center">
               <span class="font-serif font-bold text-sm tracking-wide">👩‍⚕️ Terapis: {{ therapistName }}</span>
               <span class="bg-[#b48a57] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
@@ -1389,13 +1442,11 @@ const resetForm = () => {
             </div>
 
             <div class="p-3 space-y-3 flex-1 bg-[#fffdfa] max-h-[500px] overflow-y-auto">
-              
               <div v-if="bookings.length === 0" class="text-xs text-gray-400 text-center py-8 italic">
                 Tidak ada sesi jadwal untuk {{ therapistName }} pada tanggal ini.
               </div>
 
               <div v-for="book in bookings" :key="book.id" class="p-3 rounded-lg border border-[#ebdcc3] bg-white text-xs space-y-2 shadow-sm">
-                
                 <div class="flex justify-between items-center border-b border-gray-100 pb-1.5">
                   <span class="font-bold text-xs bg-[#b48a57] text-white px-2 py-0.5 rounded">⏰ {{ book.booking_time }}</span>
                   <span class="px-2 py-0.5 rounded text-[10px] font-bold"
@@ -1432,62 +1483,168 @@ const resetForm = () => {
                     🗑️ Hapus
                   </button>
                 </div>
-
               </div>
-
             </div>
-
           </div>
-
         </div>
-
       </div>
 
     </div>
 
-    <!-- ================= VIEW 2: HALAMAN DATABASE PELANGGAN ================= -->
-    <div v-if="currentView === 'customers'" class="max-w-3xl mx-auto bg-white rounded-2xl p-6 shadow-xl border border-[#ebdcc3] space-y-4">
-      <div class="flex justify-between items-center border-b border-[#f4ecd8] pb-3">
-        <h3 class="font-serif text-lg font-bold text-[#5a4633]">👥 Database Pelanggan (Urut A-Z)</h3>
-        <button @click="currentView = 'form'" class="text-xs font-bold bg-[#b48a57] text-white px-3 py-1.5 rounded-lg">Kembali ke Form</button>
+    <!-- ================= VIEW 2: HALAMAN DAFTAR PELANGGAN ================= -->
+    <div v-if="currentView === 'customers'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
+        <div>
+          <h3 class="font-serif text-xl font-bold text-[#5a4633]">👥 Rekod Daftar Pelanggan Berdasarkan Periode</h3>
+          <p class="text-xs text-[#8c7355]">Pantau daftar kunjungan dan total belanja pelanggan per harian, mingguan, bulanan, atau tahunan</p>
+        </div>
+        <button @click="currentView = 'form'" class="text-xs font-bold bg-[#b48a57] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
       </div>
 
-      <div v-if="allCustomers.length === 0" class="text-center py-8 text-gray-500 text-sm">Belum ada data pelanggan tersimpan.</div>
+      <!-- FILTER PERIODE PELANGGAN -->
+      <div class="space-y-4">
+        <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
+          <button @click="customerPeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'harian' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
+          <button @click="customerPeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'mingguan' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
+          <button @click="customerPeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'bulanan' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
+          <button @click="customerPeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'tahunan' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Tahunan</button>
+        </div>
+
+        <div class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div v-if="customerPeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
+            <input v-model="customerDateDaily" type="date" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+
+          <div v-if="customerPeriod === 'mingguan'" class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Minggu Ke:</span>
+            <select v-model.number="customerWeekNum" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="w in 52" :key="w" :value="w">Minggu ke-{{ w }}</option>
+            </select>
+            <span class="font-bold text-[#5a4633]">Tahun:</span>
+            <select v-model.number="customerWeekYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <div v-if="customerPeriod === 'bulanan'" class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Bulan:</span>
+            <select v-model.number="customerMonth" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="m in 12" :key="m" :value="m">Bulan {{ m }}</option>
+            </select>
+            <span class="font-bold text-[#5a4633]">Tahun:</span>
+            <select v-model.number="customerMonthYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <div v-if="customerPeriod === 'tahunan'" class="flex items-center gap-2 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Pilih Tahun:</span>
+            <select v-model.number="customerYearAnnual" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <span class="text-gray-500 italic">Menampilkan pelanggan yang aktif pada periode ini</span>
+        </div>
+      </div>
+
+      <div v-if="Object.keys(filteredCustomersByPeriod).length === 0" class="text-center py-10 text-gray-500 text-xs italic">
+        Tiada rekod kunjungan pelanggan pada periode ini.
+      </div>
       
-      <div v-else class="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-        <div v-for="(customersGroup, letter) in groupedAndSortedCustomers" :key="letter" class="space-y-2">
-          <div class="font-serif font-bold text-sm text-[#b48a57] border-b border-[#ebdcc3] pb-1 sticky top-0 bg-white z-10">{{ letter }}</div>
-          <div v-for="cust in customersGroup" :key="cust.id" class="p-3 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-1 shadow-sm">
-            <p class="font-bold text-[#5a4633] text-sm">{{ cust.name }}</p>
-            <p class="text-gray-600">📞 {{ cust.phone || '–' }} · 📅 Terakhir: {{ cust.lastVisit }}</p>
-            <p class="text-gray-500">{{ cust.visitCount }}x kunjungan · B$ {{ cust.totalSpent.toFixed(2) }} total</p>
+      <div v-else class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+        <div v-for="(customersGroup, letter) in filteredCustomersByPeriod" :key="letter" class="space-y-2">
+          <div class="font-serif font-bold text-sm text-[#2d7a4f] border-b border-[#ebdcc3] pb-1 sticky top-0 bg-white z-10">{{ letter }}</div>
+          <div v-for="cust in customersGroup" :key="cust.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-1 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <p class="font-bold text-[#5a4633] text-sm">{{ cust.name }}</p>
+              <p class="text-gray-600">📞 {{ cust.phone || '–' }} · 📅 Kunjungan Terakhir: {{ cust.lastVisit }}</p>
+            </div>
+            <div class="text-right">
+              <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">{{ cust.visitCount }}x Kunjungan</span>
+              <p class="font-serif font-bold text-sm text-[#b48a57] mt-1">B$ {{ cust.totalSpent.toFixed(2) }}</p>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- ================= VIEW 3: HALAMAN RIWAYAT INVOIS ================= -->
-    <div v-if="currentView === 'history'" class="max-w-2xl mx-auto bg-white rounded-2xl p-6 shadow-xl border border-[#ebdcc3] space-y-4">
-      <div class="flex justify-between items-center border-b border-[#f4ecd8] pb-3">
-        <h3 class="font-serif text-lg font-bold text-[#5a4633]">📜 Riwayat Invois</h3>
-        <button @click="currentView = 'form'" class="text-xs font-bold bg-[#b48a57] text-white px-3 py-1.5 rounded-lg">Kembali ke Form</button>
+    <div v-if="currentView === 'history'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
+        <div>
+          <h3 class="font-serif text-xl font-bold text-[#5a4633]">📜 Rekod Riwayat / Invois Berdasarkan Periode</h3>
+          <p class="text-xs text-[#8c7355]">Pantau senarai invois dan jumlah pendapatan transaksi per harian, mingguan, bulanan, atau tahunan</p>
+        </div>
+        <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3b5998] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
       </div>
-      <p class="text-[11px] font-bold uppercase tracking-widest text-[#8c7355]">INVOICE HISTORY · {{ invoiceHistory.length }} rekod</p>
 
-      <div v-if="invoiceHistory.length === 0" class="text-center py-8 text-gray-500 text-sm">Belum ada riwayat invois tersimpan di database.</div>
+      <!-- FILTER PERIODE RIWAYAT INVOIS -->
+      <div class="space-y-4">
+        <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
+          <button @click="historyPeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'harian' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
+          <button @click="historyPeriod = 'mingguan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'mingguan' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📆 Mingguan</button>
+          <button @click="historyPeriod = 'bulanan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'bulanan' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">🗓️ Bulanan</button>
+          <button @click="historyPeriod = 'tahunan'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'tahunan' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📈 Tahunan</button>
+        </div>
+
+        <div class="p-4 rounded-xl bg-[#fffdfa] border border-[#ebdcc3] flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div v-if="historyPeriod === 'harian'" class="flex items-center gap-2 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Pilih Tarikh:</span>
+            <input v-model="historyDateDaily" type="date" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+
+          <div v-if="historyPeriod === 'mingguan'" class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Minggu Ke:</span>
+            <select v-model.number="historyWeekNum" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="w in 52" :key="w" :value="w">Minggu ke-{{ w }}</option>
+            </select>
+            <span class="font-bold text-[#5a4633]">Tahun:</span>
+            <select v-model.number="historyWeekYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <div v-if="historyPeriod === 'bulanan'" class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Bulan:</span>
+            <select v-model.number="historyMonth" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="m in 12" :key="m" :value="m">Bulan {{ m }}</option>
+            </select>
+            <span class="font-bold text-[#5a4633]">Tahun:</span>
+            <select v-model.number="historyMonthYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <div v-if="historyPeriod === 'tahunan'" class="flex items-center gap-2 w-full sm:w-auto">
+            <span class="font-bold text-[#5a4633]">Pilih Tahun:</span>
+            <select v-model.number="historyYearAnnual" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <span class="text-gray-500 italic">Menampilkan {{ filteredHistoryList.length }} rekod (Total: {{ formatCurrency(filteredHistoryTotalAmount) }})</span>
+        </div>
+      </div>
+
+      <div v-if="filteredHistoryList.length === 0" class="text-center py-10 text-gray-500 text-xs italic">
+        Tiada rekod invois pada periode ini.
+      </div>
 
       <div v-else class="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-        <div v-for="(inv, idx) in invoiceHistory" :key="inv.id || idx" class="p-4 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-2 shadow-sm">
+        <div v-for="(inv, idx) in filteredHistoryList" :key="inv.id || idx" class="p-4 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-2 shadow-sm">
           <div class="flex justify-between items-center">
-            <span class="font-bold font-serif text-[#5a4633] text-sm">SW-{{ inv.invoice_date ? inv.invoice_date.replace(/-/g, '') : '20260801' }}-00{{ invoiceHistory.length - idx }}</span>
+            <span class="font-bold font-serif text-[#5a4633] text-sm">SW-{{ inv.invoice_date ? inv.invoice_date.replace(/-/g, '') : '20260801' }}-00{{ filteredHistoryList.length - idx }}</span>
             <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">LUNAS</span>
           </div>
           <div class="space-y-0.5 text-gray-600">
-            <p>👤 {{ inv.customer_name }}</p>
-            <p>📅 {{ inv.invoice_date }} · 🕐 {{ formatDateTime(inv.created_at).combined }}</p>
-            <p>{{ Array.isArray(inv.treatments) ? inv.treatments.length : 1 }} perkhidmatan · {{ inv.payment_method }}</p>
+            <p>👤 <strong>{{ inv.customer_name }}</strong> ({{ inv.customer_wa || '-' }})</p>
+            <p>📅 {{ inv.invoice_date }} · 🕐 {{ formatDateTime(inv.created_at).combined }} · Terapis: {{ inv.therapist || '-' }}</p>
+            <p>{{ Array.isArray(inv.treatments) ? inv.treatments.length : 1 }} perkhidmatan · Pembayaran via {{ inv.payment_method }}</p>
           </div>
-          <div class="pt-2 border-t border-[#f4ecd8]">
+          <div class="pt-2 border-t border-[#f4ecd8] flex justify-between items-center">
+            <span class="text-[10px] text-gray-500 italic">{{ inv.remarks || 'Tiada catatan' }}</span>
             <span class="font-bold text-[#b48a57] text-sm">B$ {{ Number(inv.total_amount).toFixed(2) }}</span>
           </div>
         </div>
