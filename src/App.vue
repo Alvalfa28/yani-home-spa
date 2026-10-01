@@ -478,7 +478,8 @@ const filteredIncomesByPeriod = computed(() => {
   })
 })
 
-const filteredInvoiceIncomeTotal = computed(() => {
+// Filter Invois Berdasarkan Periode Keuangan
+const filteredInvoicesForFinance = computed(() => {
   return invoiceHistory.value.filter(inv => {
     if (expensePeriod.value === 'semua') return true
     if (!inv.invoice_date) return false
@@ -493,7 +494,44 @@ const filteredInvoiceIncomeTotal = computed(() => {
       return invDate.getFullYear() === Number(expenseYearAnnual.value)
     }
     return true
-  }).reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
+  })
+})
+
+const filteredInvoiceIncomeTotal = computed(() => {
+  return filteredInvoicesForFinance.value.reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
+})
+
+// --- RINCIAN PEMASUKAN BERDASARKAN KATEGORI PEMBAYARAN (Cash, BIBD, Baiduri) ---
+const paymentBreakdownSummary = computed(() => {
+  let cashTotal = 0
+  let cashCount = 0
+  let bibdTotal = 0
+  let bibdCount = 0
+  let baiduriTotal = 0
+  let baiduriCount = 0
+
+  filteredInvoicesForFinance.value.forEach(inv => {
+    const method = (inv.payment_method || '').toLowerCase()
+    const amount = Number(inv.total_amount) || 0
+
+    if (method.includes('bibd') || method.includes('qr pay bibd')) {
+      bibdTotal += amount
+      bibdCount += 1
+    } else if (method.includes('baiduri') || method.includes('qr pay baiduri')) {
+      baiduriTotal += amount
+      baiduriCount += 1
+    } else {
+      // Default ke Cash / Debit Card jika tidak terdeteksi bank lain
+      cashTotal += amount
+      cashCount += 1
+    }
+  })
+
+  return {
+    cash: { total: cashTotal, count: cashCount },
+    bibd: { total: bibdTotal, count: bibdCount },
+    baiduri: { total: baiduriTotal, count: baiduriCount }
+  }
 })
 
 const filteredManualIncomeTotal = computed(() => {
@@ -1008,7 +1046,6 @@ const saveToSupabase = async () => {
   showToast('Menyimpan data...', 'success')
 
   try {
-    // 1. Simpan Invois ke Tabel yhs_invoices
     const { error: invError } = await supabase.from('yhs_invoices').insert([{
       customer_name: customerName.value.trim(),
       customer_wa: customerPhone.value.trim(),
@@ -1024,7 +1061,6 @@ const saveToSupabase = async () => {
 
     if (invError) throw invError
 
-    // 2. Catat ke Tabel Pelanggan (yhs_customers) jika belum ada
     const existingCust = allCustomers.value.find(
       c => c.name.toLowerCase() === customerName.value.trim().toLowerCase()
     )
@@ -1036,8 +1072,7 @@ const saveToSupabase = async () => {
       }])
     }
 
-    // 3. Otomatis Catat ke Kalendar Booking dengan Status "Selesai"
-    const currentTimeStr = new Date().toTimeString().slice(0, 5) // cth: "14:30"
+    const currentTimeStr = new Date().toTimeString().slice(0, 5)
     const { error: bookError } = await supabase.from('yhs_bookings').insert([{
       customer_name: customerName.value.trim(),
       customer_phone: customerPhone.value.trim(),
@@ -1410,7 +1445,7 @@ const resetForm = () => {
       <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-[#f4ecd8] pb-5 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">💰 Kelola Keuangan (Pemasukan & Pengeluaran)</h3>
-          <p class="text-xs text-[#8c7355] mt-0.5">Pantau aliran kas masuk, pemasukan manual, pengeluaran operasional, dan sisa saldo bersih</p>
+          <p class="text-xs text-[#8c7355] mt-0.5">Pantau aliran kas masuk, rincian pembayaran Cash / BIBD / Baiduri, dan saldo bersih</p>
         </div>
         
         <div class="flex items-center gap-2 flex-wrap w-full xl:w-auto justify-start xl:justify-end">
@@ -1477,6 +1512,7 @@ const resetForm = () => {
         </div>
       </div>
 
+      <!-- KARTU RINGKASAN UTAMA -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
@@ -1496,6 +1532,43 @@ const resetForm = () => {
             {{ formatCurrency(filteredNetBalance) }}
           </p>
           <p class="text-[10px] text-gray-600">Sisa saldo bersih</p>
+        </div>
+      </div>
+
+      <!-- KARTU RINCIAN SUMBER UANG DARI 3 KATEGORI (CASH, BIBD, BAIDURI) -->
+      <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-3 shadow-sm">
+        <h4 class="font-serif text-sm font-bold text-[#5a4633] border-b border-[#ebdcc3] pb-2">💳 Rincian Sumber Penerimaan Invois (Cash, BIBD & Baiduri)</h4>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+          <!-- Kategori Cash -->
+          <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-bold text-[#5a4633]">💵 Cash / Tunai</span>
+              <span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.cash.count }} Transaksi</span>
+            </div>
+            <p class="font-serif font-bold text-base text-[#b48a57]">{{ formatCurrency(paymentBreakdownSummary.cash.total) }}</p>
+            <p class="text-[10px] text-gray-500 italic">Pembayaran langsung tunai / debit</p>
+          </div>
+
+          <!-- Kategori BIBD -->
+          <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-bold text-[#5a4633]">🏦 BIBD (Transfer / QR)</span>
+              <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.bibd.count }} Transaksi</span>
+            </div>
+            <p class="font-serif font-bold text-base text-blue-700">{{ formatCurrency(paymentBreakdownSummary.bibd.total) }}</p>
+            <p class="text-[10px] text-gray-500 italic">Transfer / QR Pay via BIBD</p>
+          </div>
+
+          <!-- Kategori Baiduri -->
+          <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-bold text-[#5a4633]">🏦 Baiduri (Transfer / QR)</span>
+              <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.baiduri.count }} Transaksi</span>
+            </div>
+            <p class="font-serif font-bold text-base text-purple-700">{{ formatCurrency(paymentBreakdownSummary.baiduri.total) }}</p>
+            <p class="text-[10px] text-gray-500 italic">Transfer / QR Pay via Baiduri</p>
+          </div>
         </div>
       </div>
 
@@ -1673,9 +1746,40 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Tabel Pemasukan -->
+      <!-- Rincian Kategori Pembayaran Cetak -->
       <div class="space-y-2">
-        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">A. Rincian Pemasukan</h3>
+        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">A. Rincian Sumber Pembayaran Invois</h3>
+        <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
+          <thead>
+            <tr class="bg-[#f4ecd8] text-[#5a4633]">
+              <th class="border border-[#ebdcc3] p-2">Kategori Metode Pembayaran</th>
+              <th class="border border-[#ebdcc3] p-2 text-center">Jumlah Transaksi</th>
+              <th class="border border-[#ebdcc3] p-2 text-right">Total Uang (B$)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="border border-[#ebdcc3] p-2 font-semibold">Cash / Tunai</td>
+              <td class="border border-[#ebdcc3] p-2 text-center">{{ paymentBreakdownSummary.cash.count }}x</td>
+              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-[#b48a57]">{{ formatCurrency(paymentBreakdownSummary.cash.total) }}</td>
+            </tr>
+            <tr>
+              <td class="border border-[#ebdcc3] p-2 font-semibold">BIBD (Transfer / QR Pay)</td>
+              <td class="border border-[#ebdcc3] p-2 text-center">{{ paymentBreakdownSummary.bibd.count }}x</td>
+              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-blue-700">{{ formatCurrency(paymentBreakdownSummary.bibd.total) }}</td>
+            </tr>
+            <tr>
+              <td class="border border-[#ebdcc3] p-2 font-semibold">Baiduri (Transfer / QR Pay)</td>
+              <td class="border border-[#ebdcc3] p-2 text-center">{{ paymentBreakdownSummary.baiduri.count }}x</td>
+              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-purple-700">{{ formatCurrency(paymentBreakdownSummary.baiduri.total) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Tabel Pemasukan Manual -->
+      <div class="space-y-2">
+        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">B. Rincian Pemasukan Manual</h3>
         <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
           <thead>
             <tr class="bg-[#f4ecd8] text-[#5a4633]">
@@ -1701,7 +1805,7 @@ const resetForm = () => {
 
       <!-- Tabel Pengeluaran -->
       <div class="space-y-2">
-        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">B. Rincian Pengeluaran</h3>
+        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">C. Rincian Pengeluaran</h3>
         <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
           <thead>
             <tr class="bg-[#f4ecd8] text-[#5a4633]">
@@ -1869,7 +1973,7 @@ const resetForm = () => {
           <div v-for="(bookings, therapistName) in bookingsGroupedByTherapist" :key="therapistName" 
                class="bg-white rounded-xl border border-[#ebdcc3] shadow-sm overflow-hidden flex flex-col">
             <div class="bg-[#5a4633] text-white px-4 py-3 flex justify-between items-center">
-              <span class="font-serif font-bold text-sm tracking-wide">👩‍‍⚕️ Terapis: {{ therapistName }}</span>
+              <span class="font-serif font-bold text-sm tracking-wide">👩‍⚕️ Terapis: {{ therapistName }}</span>
               <span class="bg-[#b48a57] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
                 {{ bookings.length }} sesi
               </span>
@@ -2077,7 +2181,7 @@ const resetForm = () => {
             <div class="flex items-center gap-2">
               <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">LUNAS</span>
               <button @click="deleteInvoiceHistory(inv.id, inv.customer_name)" class="px-2.5 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700 transition-all">
-                🗑️ Hapus Invois
+                🗑️️ Hapus Invois
               </button>
             </div>
           </div>
