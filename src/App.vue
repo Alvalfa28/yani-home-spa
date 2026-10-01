@@ -9,6 +9,7 @@ const currentView = ref('form')
 // --- STATE FORM INPUT INVOICE ---
 const customerName = ref('')
 const customerPhone = ref('')
+const customerAddress = ref('') // <-- Tambahan state alamat pelanggan
 const visitDate = ref(new Date().toISOString().split('T')[0])
 const paymentMethod = ref('Cash')
 const paymentStatus = ref('Full Payment')
@@ -128,6 +129,7 @@ const showAddBookingModal = ref(false)
 const newBooking = ref({
   customer_name: '',
   customer_phone: '',
+  customer_address: '', // <-- Tambahan alamat pada form modal booking
   booking_date: new Date().toISOString().split('T')[0],
   booking_start_time: '10:00',
   booking_end_time: '11:00',
@@ -478,7 +480,6 @@ const filteredIncomesByPeriod = computed(() => {
   })
 })
 
-// Filter Invois Berdasarkan Periode Keuangan
 const filteredInvoicesForFinance = computed(() => {
   return invoiceHistory.value.filter(inv => {
     if (expensePeriod.value === 'semua') return true
@@ -501,7 +502,6 @@ const filteredInvoiceIncomeTotal = computed(() => {
   return filteredInvoicesForFinance.value.reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
 })
 
-// --- RINCIAN PEMASUKAN BERDASARKAN KATEGORI PEMBAYARAN (Cash, BIBD, Baiduri) ---
 const paymentBreakdownSummary = computed(() => {
   let cashTotal = 0
   let cashCount = 0
@@ -521,7 +521,6 @@ const paymentBreakdownSummary = computed(() => {
       baiduriTotal += amount
       baiduriCount += 1
     } else {
-      // Default ke Cash / Debit Card jika tidak terdeteksi bank lain
       cashTotal += amount
       cashCount += 1
     }
@@ -640,7 +639,6 @@ const filteredServicesForBooking = computed(() => {
   return availableServices.value.filter(s => s.name.toLowerCase().includes(keyword))
 })
 
-// Validasi Waktu Bentrok (Overlap Time Check)
 const isTimeOverlapping = (start1, end1, start2, end2) => {
   return start1 < end2 && start2 < end1
 }
@@ -683,6 +681,7 @@ const saveBookingToDB = async () => {
     const payload = {
       customer_name: newBooking.value.customer_name.trim(),
       customer_phone: newBooking.value.customer_phone.trim(),
+      customer_address: newBooking.value.customer_address.trim(), // <-- Simpan alamat di tabel booking
       booking_date: newBooking.value.booking_date,
       booking_time: startTime,
       booking_start_time: startTime,
@@ -702,6 +701,7 @@ const saveBookingToDB = async () => {
     newBooking.value = {
       customer_name: '',
       customer_phone: '',
+      customer_address: '',
       booking_date: selectedCalendarDate.value,
       booking_start_time: '10:00',
       booking_end_time: '11:00',
@@ -742,6 +742,7 @@ const deleteBookingFromDB = async (bookId, customerName) => {
 const useBookingForInvoice = (book) => {
   customerName.value = book.customer_name
   customerPhone.value = book.customer_phone
+  customerAddress.value = book.customer_address || '' // <-- Otomatis isi alamat ke form invois dari kalendar
   visitDate.value = book.booking_date
   selectedTherapist.value = book.therapist !== 'Tanpa Terapis' ? book.therapist : ''
   remarks.value = `Dari Booking WA (${book.booking_start_time || book.booking_time} - ${book.booking_end_time || 'selesai'}): ${book.notes || '-'}`
@@ -948,6 +949,7 @@ const filteredCustomers = computed(() => {
 const selectCustomer = (cust) => {
   customerName.value = cust.name
   customerPhone.value = cust.phone
+  customerAddress.value = cust.address || '' // Otomatis isi alamat jika ada di database
   showCustomerDropdown.value = false
 }
 
@@ -1024,7 +1026,7 @@ const transactionDiscountAmount = computed(() => {
 const totalDue = computed(() => {
   let finalAmount = subtotal.value - transactionDiscountAmount.value
   return finalAmount > 0 ? finalAmount : 0
-})
+} )
 
 const formatCurrency = (val) => {
   return 'B$ ' + Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -1035,7 +1037,7 @@ const invoiceNumber = computed(() => {
   return `YHS-${dateStr}-001`
 })
 
-// --- SIMPAN INVOIS DAN OTOMATIS CATAT KE KALENDAR BOOKING DENGAN STATUS "Selesai" ---
+// --- SIMPAN INVOIS DAN ALAMAT KE SUPABASE ---
 const saveToSupabase = async () => {
   if (!customerName.value || !customerPhone.value) {
     showToast('⚠️ Mohon isi Nama Pelanggan dan No. Telefon.', 'error')
@@ -1049,6 +1051,7 @@ const saveToSupabase = async () => {
     const { error: invError } = await supabase.from('yhs_invoices').insert([{
       customer_name: customerName.value.trim(),
       customer_wa: customerPhone.value.trim(),
+      customer_address: customerAddress.value.trim(), // Menyimpan alamat ke tabel invois
       invoice_date: visitDate.value,
       total_amount: totalDue.value,
       treatments: selectedServices.value,
@@ -1068,14 +1071,19 @@ const saveToSupabase = async () => {
     if (!existingCust) {
       await supabase.from('yhs_customers').insert([{
         name: customerName.value.trim(),
-        phone: customerPhone.value.trim()
+        phone: customerPhone.value.trim(),
+        address: customerAddress.value.trim() // Menyimpan alamat ke tabel pelanggan
       }])
+    } else {
+      // Update alamat pelanggan jika ada perubahan
+      await supabase.from('yhs_customers').update({ address: customerAddress.value.trim() }).eq('id', existingCust.id)
     }
 
     const currentTimeStr = new Date().toTimeString().slice(0, 5)
     const { error: bookError } = await supabase.from('yhs_bookings').insert([{
       customer_name: customerName.value.trim(),
       customer_phone: customerPhone.value.trim(),
+      customer_address: customerAddress.value.trim(), // Menyimpan alamat ke tabel booking otomatis
       booking_date: visitDate.value,
       booking_time: currentTimeStr,
       booking_start_time: currentTimeStr,
@@ -1090,7 +1098,7 @@ const saveToSupabase = async () => {
       console.error('Gagal mencatat otomatis ke booking:', bookError.message)
     }
 
-    showToast('✅ Invois tersimpan, pelanggan & kalendar booking tercatat (Selesai)!')
+    showToast('✅ Invois, alamat, & kalendar booking tercatat!')
     fetchData() 
   } catch (err) {
     showToast('❌ Gagal menyimpan: ' + err.message, 'error')
@@ -1106,7 +1114,7 @@ const printFinancialReport = () => {
 }
 
 const copyInvoiceText = () => {
-  let text = `*YANI HOME & SPA INVOICE*\nNo: ${invoiceNumber.value}\nTarikh: ${visitDate.value}\nNama: ${customerName.value || '-'}\nTelefon: ${customerPhone.value || '-'}\nTerapis: ${selectedTherapist.value || '-'}\n`
+  let text = `*YANI HOME & SPA INVOICE*\nNo: ${invoiceNumber.value}\nTarikh: ${visitDate.value}\nNama: ${customerName.value || '-'}\nTelefon: ${customerPhone.value || '-'}\nAlamat: ${customerAddress.value || '-'}\nTerapis: ${selectedTherapist.value || '-'}\n`
   if(remarks.value) text += `Catatan: ${remarks.value}\n`
   text += `\n*Rincian Rawatan:*\n`
   selectedServices.value.forEach((s, i) => {
@@ -1122,6 +1130,7 @@ const copyInvoiceText = () => {
 const resetForm = () => {
   customerName.value = ''
   customerPhone.value = ''
+  customerAddress.value = ''
   visitDate.value = new Date().toISOString().split('T')[0]
   selectedTherapist.value = ''
   remarks.value = ''
@@ -1205,6 +1214,12 @@ const resetForm = () => {
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">No. Telefon</label>
             <input v-model="customerPhone" type="text" placeholder="+673 xxx xxxx" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
           </div>
+        </div>
+
+        <!-- Tambahan Input Alamat Pelanggan pada Form Invois -->
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Alamat Pelanggan / Address</label>
+          <input v-model="customerAddress" type="text" placeholder="Cth: Simpang 22, Kampong Tanjong Bunut..." class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1370,6 +1385,7 @@ const resetForm = () => {
 
       </div>
 
+      <!-- Pratinjau Invois dengan Tampilan Alamat -->
       <div id="invoice-preview" class="lg:col-span-5 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 sticky top-6">
         <div class="text-center border-b border-[#ebdcc3] pb-6 mb-6 flex flex-col items-center">
           <img :src="logoImage" alt="Logo" class="w-16 h-16 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-2" />
@@ -1392,7 +1408,8 @@ const resetForm = () => {
         <div class="bg-[#fdfbf7] p-3 rounded-xl border border-[#ebdcc3] mb-6 text-xs space-y-1">
           <span class="font-bold text-[#8c7355] block uppercase text-[10px]">Pelanggan / Customer</span>
           <p class="font-semibold text-[#3e3529]">{{ customerName || '-' }}</p>
-          <p class="text-gray-500">{{ customerPhone || '-' }}</p>
+          <p class="text-gray-500">📞 {{ customerPhone || '-' }}</p>
+          <p class="text-gray-600">📍 {{ customerAddress || '-' }}</p>
           <p v-if="selectedTherapist" class="text-[11px] text-[#8c7355] font-semibold pt-1 border-t border-[#ebdcc3]">Terapis: {{ selectedTherapist }}</p>
           <p v-if="remarks" class="text-[11px] text-gray-600 italic pt-1 border-t border-[#ebdcc3]">Catatan: {{ remarks }}</p>
         </div>
@@ -1512,7 +1529,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- KARTU RINGKASAN UTAMA -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
@@ -1535,12 +1551,10 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- KARTU RINCIAN SUMBER UANG DARI 3 KATEGORI (CASH, BIBD, BAIDURI) -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-3 shadow-sm">
         <h4 class="font-serif text-sm font-bold text-[#5a4633] border-b border-[#ebdcc3] pb-2">💳 Rincian Sumber Penerimaan Invois (Cash, BIBD & Baiduri)</h4>
         
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-          <!-- Kategori Cash -->
           <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
             <div class="flex justify-between items-center text-xs">
               <span class="font-bold text-[#5a4633]">💵 Cash / Tunai</span>
@@ -1550,7 +1564,6 @@ const resetForm = () => {
             <p class="text-[10px] text-gray-500 italic">Pembayaran langsung tunai / debit</p>
           </div>
 
-          <!-- Kategori BIBD -->
           <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
             <div class="flex justify-between items-center text-xs">
               <span class="font-bold text-[#5a4633]">🏦 BIBD (Transfer / QR)</span>
@@ -1560,7 +1573,6 @@ const resetForm = () => {
             <p class="text-[10px] text-gray-500 italic">Transfer / QR Pay via BIBD</p>
           </div>
 
-          <!-- Kategori Baiduri -->
           <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
             <div class="flex justify-between items-center text-xs">
               <span class="font-bold text-[#5a4633]">🏦 Baiduri (Transfer / QR)</span>
@@ -1575,7 +1587,7 @@ const resetForm = () => {
       <!-- MODAL TAMBAH / EDIT PEMASUKAN MANUAL -->
       <div v-if="showAddIncomeModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#2d7a4f] space-y-4 shadow-md w-full">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">
-          {{ editingIncomeId ? '✏️ Edit Rekod Pemasukan Manual' : '✍️ Tambah Rekod Pemasukan Manual Baru' }}
+          {{ editingIncomeId ? '✏️ Edit Rekod Pemasukan Manual' : '✍️️ Tambah Rekod Pemasukan Manual Baru' }}
         </h4>
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -1730,7 +1742,6 @@ const resetForm = () => {
         <p class="text-[11px] text-gray-500 mt-1">Periode Filter: <span class="uppercase font-bold">{{ expensePeriod }}</span></p>
       </div>
 
-      <!-- Ringkasan Keuangan Cetak -->
       <div class="grid grid-cols-3 gap-4 border border-[#ebdcc3] p-4 rounded-xl text-xs">
         <div class="text-center">
           <p class="font-bold text-emerald-800 uppercase">Total Pemasukan</p>
@@ -1746,7 +1757,6 @@ const resetForm = () => {
         </div>
       </div>
 
-      <!-- Rincian Kategori Pembayaran Cetak -->
       <div class="space-y-2">
         <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">A. Rincian Sumber Pembayaran Invois</h3>
         <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
@@ -1777,7 +1787,6 @@ const resetForm = () => {
         </table>
       </div>
 
-      <!-- Tabel Pemasukan Manual -->
       <div class="space-y-2">
         <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">B. Rincian Pemasukan Manual</h3>
         <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
@@ -1803,7 +1812,6 @@ const resetForm = () => {
         </table>
       </div>
 
-      <!-- Tabel Pengeluaran -->
       <div class="space-y-2">
         <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">C. Rincian Pengeluaran</h3>
         <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
@@ -1871,6 +1879,12 @@ const resetForm = () => {
           <div>
             <label class="block font-bold text-[#8c7355] mb-1">No. Telefon WhatsApp</label>
             <input v-model="newBooking.customer_phone" type="text" placeholder="+673..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          </div>
+
+          <!-- Tambahan Input Alamat Pelanggan pada Modal Kalendar Booking -->
+          <div class="sm:col-span-2">
+            <label class="block font-bold text-[#8c7355] mb-1">Alamat Pelanggan</label>
+            <input v-model="newBooking.customer_address" type="text" placeholder="Cth: Kampong Tanjong Bunut..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
           
           <div class="w-full overflow-hidden">
@@ -1998,6 +2012,7 @@ const resetForm = () => {
                 <div>
                   <p class="font-serif font-bold text-sm text-[#5a4633]">{{ book.customer_name }}</p>
                   <p class="text-gray-600 text-[11px]">📞 {{ book.customer_phone || '-' }}</p>
+                  <p class="text-gray-500 text-[11px]">📍 {{ book.customer_address || '-' }}</p>
                 </div>
                 
                 <div class="bg-[#fdfbf7] p-2 rounded border border-[#ebdcc3] space-y-0.5">
@@ -2041,7 +2056,6 @@ const resetForm = () => {
         <button @click="currentView = 'form'" class="text-xs font-bold bg-[#b48a57] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
       </div>
 
-      <!-- FILTER PERIODE PELANGGAN -->
       <div class="space-y-4">
         <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
           <button @click="customerPeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="customerPeriod === 'harian' ? 'bg-[#2d7a4f] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
@@ -2100,7 +2114,8 @@ const resetForm = () => {
           <div v-for="cust in customersGroup" :key="cust.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-1 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div>
               <p class="font-bold text-[#5a4633] text-sm">{{ cust.name }}</p>
-              <p class="text-gray-600">📞 {{ cust.phone || '–' }} · 📅 Kunjungan Terakhir: {{ cust.lastVisit }}</p>
+              <p class="text-gray-600">📞 {{ cust.phone || '–' }} · 📍 {{ cust.address || '–' }}</p>
+              <p class="text-gray-400 text-[11px]">📅 Kunjungan Terakhir: {{ cust.lastVisit }}</p>
             </div>
             <div class="text-right">
               <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">{{ cust.visitCount }}x Kunjungan</span>
@@ -2121,7 +2136,6 @@ const resetForm = () => {
         <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3b5998] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
       </div>
 
-      <!-- FILTER PERIODE RIWAYAT INVOIS -->
       <div class="space-y-4">
         <div class="flex flex-wrap justify-center gap-2 bg-[#fdfbf7] p-2 rounded-2xl border border-[#ebdcc3]">
           <button @click="historyPeriod = 'harian'" class="px-4 py-2 text-xs font-bold rounded-xl transition-all" :class="historyPeriod === 'harian' ? 'bg-[#3b5998] text-white shadow' : 'bg-white text-[#5a4633] border border-[#ebdcc3]'">📅 Harian</button>
@@ -2181,12 +2195,13 @@ const resetForm = () => {
             <div class="flex items-center gap-2">
               <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">LUNAS</span>
               <button @click="deleteInvoiceHistory(inv.id, inv.customer_name)" class="px-2.5 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700 transition-all">
-                🗑️️ Hapus Invois
+                🗑️ Hapus Invois
               </button>
             </div>
           </div>
           <div class="space-y-0.5 text-gray-600">
             <p>👤 <strong>{{ inv.customer_name }}</strong> ({{ inv.customer_wa || '-' }})</p>
+            <p>📍 Alamat: {{ inv.customer_address || '-' }}</p>
             <p>📅 {{ inv.invoice_date }} · 🕐 {{ formatDateTime(inv.created_at).combined }} · Terapis: {{ inv.therapist || '-' }}</p>
             <p>{{ Array.isArray(inv.treatments) ? inv.treatments.length : 1 }} perkhidmatan · Pembayaran via {{ inv.payment_method }}</p>
           </div>
