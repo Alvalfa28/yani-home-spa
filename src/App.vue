@@ -11,6 +11,8 @@ const customerName = ref('')
 const customerPhone = ref('')
 const customerAddress = ref('') // <-- Tambahan state alamat pelanggan
 const visitDate = ref(new Date().toISOString().split('T')[0])
+const invoiceStartTime = ref('10:00') 
+const invoiceEndTime = ref('11:00')
 const paymentMethod = ref('Cash')
 const paymentStatus = ref('Full Payment')
 const remarks = ref('')
@@ -1083,15 +1085,15 @@ const saveToSupabase = async () => {
     const { error: bookError } = await supabase.from('yhs_bookings').insert([{
       customer_name: customerName.value.trim(),
       customer_phone: customerPhone.value.trim(),
-      customer_address: customerAddress.value.trim(), // Menyimpan alamat ke tabel booking otomatis
+      customer_address: customerAddress.value.trim(),
       booking_date: visitDate.value,
-      booking_time: currentTimeStr,
-      booking_start_time: currentTimeStr,
-      booking_end_time: 'Selesai',
+      booking_time: invoiceStartTime.value,       // <-- Menggunakan jam mulai pilihan
+      booking_start_time: invoiceStartTime.value, // <-- Jam mulai kalendar
+      booking_end_time: invoiceEndTime.value,     // <-- Jam selesai kalendar
       therapist: selectedTherapist.value || 'Tanpa Terapis',
       treatments: selectedServices.value,
       notes: remarks.value ? `Invois Langsung: ${remarks.value}` : 'Invois Langsung',
-      status: 'Selesai'
+      status: 'Selesai' // Otomatis selesai karena langsung dibuat invoisnya
     }])
 
     if (bookError) {
@@ -1239,6 +1241,18 @@ const resetForm = () => {
               <option value="QR PAY BAIDURI">QR PAY BAIDURI</option>
               <option value="Debit Card">Debit Card</option>
             </select>
+          </div>
+        </div>
+
+        <!-- Tambahan Input Jam Mulai & Selesai untuk Invois -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Jam Mulai Sesi</label>
+            <input v-model="invoiceStartTime" type="time" class="w-full px-4 py-2 rounded-xl border border-[#ebdcc3] text-sm bg-[#fffdfa] outline-none focus:ring-2 focus:ring-[#b48a57]" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Jam Selesai Sesi</label>
+            <input v-model="invoiceEndTime" type="time" class="w-full px-4 py-2 rounded-xl border border-[#ebdcc3] text-sm bg-[#fffdfa] outline-none focus:ring-2 focus:ring-[#b48a57]" />
           </div>
         </div>
 
