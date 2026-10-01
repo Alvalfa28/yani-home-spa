@@ -228,15 +228,11 @@ const updateServiceInDB = async () => {
     return showToast('Mohon isi nama dan harga layanan yang sah.', 'error')
   }
   try {
-    const { data, error } = await supabase.from('yhs_services')
+    const { error } = await supabase.from('yhs_services')
       .update({ name: editServiceName.value.trim(), default_price: Number(editServicePrice.value) })
       .eq('id', editingServiceId.value)
-      .select()
     
     if (error) throw error
-    if (!data || data.length === 0) {
-      throw new Error("Layanan tidak ditemukan atau gagal diperbarui di database.")
-    }
 
     showToast('Layanan berhasil diperbarui!')
     cancelEditService()
@@ -249,15 +245,11 @@ const updateServiceInDB = async () => {
 const deleteServiceFromDB = async (servId, servName) => {
   if (!confirm(`Adakah anda pasti ingin memadam layanan "${servName}"?`)) return
   try {
-    const { data, error } = await supabase.from('yhs_services')
+    const { error } = await supabase.from('yhs_services')
       .delete()
       .eq('id', servId)
-      .select()
 
     if (error) throw error
-    if (!data || data.length === 0) {
-      throw new Error("Layanan tidak ditemukan di database.")
-    }
 
     showToast(`Layanan "${servName}" berhasil dipadam!`)
     fetchData()
@@ -1005,6 +997,7 @@ const invoiceNumber = computed(() => {
   return `YHS-${dateStr}-001`
 })
 
+// --- SIMPAN INVOIS DAN OTOMATIS CATAT KE KALENDAR BOOKING DENGAN STATUS "Selesai" ---
 const saveToSupabase = async () => {
   if (!customerName.value || !customerPhone.value) {
     showToast('⚠️ Mohon isi Nama Pelanggan dan No. Telefon.', 'error')
@@ -1015,6 +1008,7 @@ const saveToSupabase = async () => {
   showToast('Menyimpan data...', 'success')
 
   try {
+    // 1. Simpan Invois ke Tabel yhs_invoices
     const { error: invError } = await supabase.from('yhs_invoices').insert([{
       customer_name: customerName.value.trim(),
       customer_wa: customerPhone.value.trim(),
@@ -1030,6 +1024,7 @@ const saveToSupabase = async () => {
 
     if (invError) throw invError
 
+    // 2. Catat ke Tabel Pelanggan (yhs_customers) jika belum ada
     const existingCust = allCustomers.value.find(
       c => c.name.toLowerCase() === customerName.value.trim().toLowerCase()
     )
@@ -1041,7 +1036,26 @@ const saveToSupabase = async () => {
       }])
     }
 
-    showToast('✅ Invois tersimpan & Pelanggan otomatis tercatat!')
+    // 3. Otomatis Catat ke Kalendar Booking dengan Status "Selesai"
+    const currentTimeStr = new Date().toTimeString().slice(0, 5) // cth: "14:30"
+    const { error: bookError } = await supabase.from('yhs_bookings').insert([{
+      customer_name: customerName.value.trim(),
+      customer_phone: customerPhone.value.trim(),
+      booking_date: visitDate.value,
+      booking_time: currentTimeStr,
+      booking_start_time: currentTimeStr,
+      booking_end_time: 'Selesai',
+      therapist: selectedTherapist.value || 'Tanpa Terapis',
+      treatments: selectedServices.value,
+      notes: remarks.value ? `Invois Langsung: ${remarks.value}` : 'Invois Langsung',
+      status: 'Selesai'
+    }])
+
+    if (bookError) {
+      console.error('Gagal mencatat otomatis ke booking:', bookError.message)
+    }
+
+    showToast('✅ Invois tersimpan, pelanggan & kalendar booking tercatat (Selesai)!')
     fetchData() 
   } catch (err) {
     showToast('❌ Gagal menyimpan: ' + err.message, 'error')
@@ -1855,7 +1869,7 @@ const resetForm = () => {
           <div v-for="(bookings, therapistName) in bookingsGroupedByTherapist" :key="therapistName" 
                class="bg-white rounded-xl border border-[#ebdcc3] shadow-sm overflow-hidden flex flex-col">
             <div class="bg-[#5a4633] text-white px-4 py-3 flex justify-between items-center">
-              <span class="font-serif font-bold text-sm tracking-wide">👩‍⚕️ Terapis: {{ therapistName }}</span>
+              <span class="font-serif font-bold text-sm tracking-wide">👩‍‍⚕️ Terapis: {{ therapistName }}</span>
               <span class="bg-[#b48a57] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
                 {{ bookings.length }} sesi
               </span>
