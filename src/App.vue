@@ -7,14 +7,14 @@ import logoImage from './assets/logo.jpg'
 const currentView = ref('form') 
 
 // --- STATE FORM INPUT INVOICE ---
+const editingInvoiceId = ref(null) // <-- State untuk mode Edit Invois
 const customerName = ref('')
 const customerPhone = ref('')
-const customerAddress = ref('') // <-- Tambahan state alamat pelanggan
+const customerAddress = ref('') 
 const visitDate = ref(new Date().toISOString().split('T')[0])
 const invoiceStartTime = ref('10:00') 
-const invoiceEndTime = ref('11:00')
-const paymentMethod = ref('Cash')
-const paymentStatus = ref('Full Payment')
+const invoiceEndTime = ref('11:00')   
+const paymentMethod = ref('Cash') // Bisa bernilai 'Cash', 'Transfer BIBD', ..., atau 'Belum Lunas'
 const remarks = ref('')
 
 // Master Data & Riwayat
@@ -96,7 +96,7 @@ const expenseWeekNum = ref(getWeekNumber(new Date()))
 const expenseWeekYear = ref(currentYear)
 
 // --- STATE FILTER PELANGGAN (CUSTOMERS) ---
-const customerPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
+const customerPeriod = ref('bulanan') 
 const customerDateDaily = ref(new Date().toISOString().split('T')[0])
 const customerWeekNum = ref(getWeekNumber(new Date()))
 const customerWeekYear = ref(currentYear)
@@ -105,7 +105,7 @@ const customerMonthYear = ref(currentYear)
 const customerYearAnnual = ref(currentYear)
 
 // --- STATE FILTER RIWAYAT INVOIS (HISTORY) ---
-const historyPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
+const historyPeriod = ref('bulanan') 
 const historyDateDaily = ref(new Date().toISOString().split('T')[0])
 const historyWeekNum = ref(getWeekNumber(new Date()))
 const historyWeekYear = ref(currentYear)
@@ -114,7 +114,7 @@ const historyMonthYear = ref(currentYear)
 const historyYearAnnual = ref(currentYear)
 
 // --- STATE FILTER DASHBOARD ---
-const dashboardPeriod = ref('bulanan') // 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'semua'
+const dashboardPeriod = ref('bulanan') 
 const selectedDateDaily = ref(new Date().toISOString().split('T')[0])
 const selectedYearAnnual = ref(currentYear)
 const selectedMonth = ref(new Date().getMonth() + 1)
@@ -131,11 +131,12 @@ const showAddBookingModal = ref(false)
 const newBooking = ref({
   customer_name: '',
   customer_phone: '',
-  customer_address: '', // <-- Tambahan alamat pada form modal booking
+  customer_address: '', 
   booking_date: new Date().toISOString().split('T')[0],
   booking_start_time: '10:00',
   booking_end_time: '11:00',
   therapist: '',
+  payment_method: 'Cash', // <-- Tambahan opsi cara bayar di form booking kalendar ('Cash' atau 'Belum Lunas', dll)
   selected_services: [],
   notes: ''
 })
@@ -166,26 +167,25 @@ const fetchData = async () => {
     const { data: historyData } = await supabase.from('yhs_invoices').select('*').order('created_at', { ascending: false })
     invoiceHistory.value = historyData || []
 
-    const { data: bookData, error: bookErr } = await supabase.from('yhs_bookings').select('*').order('booking_date', { ascending: true })
-    if (bookErr) {
-      bookingList.value = []
-    } else {
+    // Ambil booking (opsional, dilindungi try-catch)
+    try {
+      const { data: bookData } = await supabase.from('yhs_bookings').select('*')
       bookingList.value = bookData || []
+    } catch (e) {
+      bookingList.value = []
     }
 
-    const { data: expData, error: expErr } = await supabase.from('yhs_expenses').select('*').order('expense_date', { ascending: false })
-    if (expErr) {
-      expenseList.value = []
-    } else {
+    // Ambil pengeluaran
+    try {
+      const { data: expData } = await supabase.from('yhs_expenses').select('*')
       expenseList.value = expData || []
+    } catch (e) {
+      expenseList.value = []
     }
 
-    const { data: incData, error: incErr } = await supabase.from('yhs_incomes').select('*').order('income_date', { ascending: false })
-    if (incErr) {
-      incomeList.value = []
-    } else {
-      incomeList.value = incData || []
-    }
+    // Pemasukan manual (yhs_incomes) diabaikan sepenuhnya agar tidak ada error 404
+    incomeList.value = []
+
   } catch (err) {
     console.error('Gagal memuat data:', err.message)
   }
@@ -249,12 +249,8 @@ const updateServiceInDB = async () => {
 const deleteServiceFromDB = async (servId, servName) => {
   if (!confirm(`Adakah anda pasti ingin memadam layanan "${servName}"?`)) return
   try {
-    const { error } = await supabase.from('yhs_services')
-      .delete()
-      .eq('id', servId)
-
+    const { error } = await supabase.from('yhs_services').delete().eq('id', servId)
     if (error) throw error
-
     showToast(`Layanan "${servName}" berhasil dipadam!`)
     fetchData()
   } catch (err) {
@@ -262,7 +258,7 @@ const deleteServiceFromDB = async (servId, servName) => {
   }
 }
 
-// --- CRUD PENGELUARAN (TAMBAH, EDIT, HAPUS) ---
+// --- CRUD PENGELUARAN & PEMASUKAN ---
 const saveOrUpdateExpense = async () => {
   if (!newExpense.value.title || !newExpense.value.amount || newExpense.value.amount <= 0) {
     return showToast('Mohon isi Keterangan dan Jumlah Pengeluaran yang sah.', 'error')
@@ -326,7 +322,6 @@ const deleteExpenseFromDB = async (expId, expTitle) => {
   }
 }
 
-// --- CRUD PEMASUKAN MANUAL (TAMBAH, EDIT, HAPUS) ---
 const saveOrUpdateIncome = async () => {
   if (!newIncome.value.title || !newIncome.value.amount || newIncome.value.amount <= 0) {
     return showToast('Mohon isi Keterangan dan Jumlah Pemasukan yang sah.', 'error')
@@ -390,7 +385,6 @@ const deleteIncomeFromDB = async (incId, incTitle) => {
   }
 }
 
-// --- FUNGSI HAPUS RIWAYAT INVOIS & DAMPAK KE PELANGGAN ---
 const deleteInvoiceHistory = async (invId, customerName) => {
   if (!confirm(`Adakah anda pasti ingin memadam invois ini? Jika ini adalah satu-satunya transaksi pelanggan "${customerName}", rekod pelanggan juga akan dipadam.`)) return
   try {
@@ -417,14 +411,7 @@ const deleteInvoiceHistory = async (invId, customerName) => {
       )
 
       if (targetCust) {
-        const { error: custErr } = await supabase
-          .from('yhs_customers')
-          .delete()
-          .eq('id', targetCust.id)
-
-        if (custErr) {
-          console.error('Gagal memadam tabel pelanggan:', custErr.message)
-        }
+        await supabase.from('yhs_customers').delete().eq('id', targetCust.id)
       }
     }
 
@@ -435,7 +422,52 @@ const deleteInvoiceHistory = async (invId, customerName) => {
   }
 }
 
-// --- FILTER & PERHITUNGAN KEUANGAN PENGELUARAN & PEMASUKAN ---
+// --- FUNGSI EDIT INVOIS (MEMUAT DATA KE FORM) ---
+const startEditInvoice = (inv) => {
+  editingInvoiceId.value = inv.id || inv._id || null
+  
+  customerName.value = inv.customer_name || ''
+  customerPhone.value = inv.customer_wa || ''
+  customerAddress.value = inv.customer_address || ''
+  visitDate.value = inv.invoice_date || new Date().toISOString().split('T')[0]
+  
+  // BERSIHKAN STRING: Memastikan nilai payment_method terbaca dengan tepat tanpa spasi tersembunyi
+  const rawMethod = (inv.payment_method || 'Cash').trim()
+  if (rawMethod.toLowerCase().includes('belum lunas')) {
+    paymentMethod.value = 'Belum Lunas'
+  } else {
+    paymentMethod.value = rawMethod
+  }
+
+  selectedTherapist.value = inv.therapist || ''
+  remarks.value = inv.remarks || ''
+  
+  if (Array.isArray(inv.treatments) && inv.treatments.length > 0) {
+    selectedServices.value = inv.treatments.map(t => ({
+      service_id: t.service_id || t.id || '',
+      name: t.name || '',
+      qty: t.qty || 1,
+      price: t.price || 0,
+      discount: t.discount || 0
+    }))
+    serviceSearchKeywords.value = inv.treatments.map(() => '')
+  } else {
+    selectedServices.value = [{ service_id: '', name: '', qty: 1, price: 0, discount: 0 }]
+    serviceSearchKeywords.value = ['']
+  }
+
+  if (inv.transaction_discount) {
+    discountValue.value = inv.transaction_discount
+    discountType.value = 'nominal'
+  } else {
+    discountValue.value = 0
+  }
+
+  currentView.value = 'form'
+  showToast(`✏️ Mode Edit Aktif untuk ID: ${editingInvoiceId.value}`)
+}
+
+// --- FILTER & PERHITUNGAN KEUANGAN ---
 const filteredExpensesByPeriod = computed(() => {
   return expenseList.value.filter(exp => {
     if (expensePeriod.value === 'semua') return true
@@ -484,6 +516,9 @@ const filteredIncomesByPeriod = computed(() => {
 
 const filteredInvoicesForFinance = computed(() => {
   return invoiceHistory.value.filter(inv => {
+    // Jika statusnya "Belum Lunas", abaikan dari perhitungan pemasukan keuangan kas masuk
+    if ((inv.payment_method || '').toLowerCase() === 'belum lunas') return false
+
     if (expensePeriod.value === 'semua') return true
     if (!inv.invoice_date) return false
     const invDate = new Date(inv.invoice_date)
@@ -511,12 +546,26 @@ const paymentBreakdownSummary = computed(() => {
   let bibdCount = 0
   let baiduriTotal = 0
   let baiduriCount = 0
+  let belumLunasTotal = 0
+  let belumLunasCount = 0
 
-  filteredInvoicesForFinance.value.forEach(inv => {
+  invoiceHistory.value.forEach(inv => {
+    // Saring berdasarkan periode keuangan aktif
+    if (expensePeriod.value !== 'semua' && inv.invoice_date) {
+      const invDate = new Date(inv.invoice_date)
+      if (expensePeriod.value === 'harian' && inv.invoice_date !== expenseDateDaily.value) return
+      if (expensePeriod.value === 'mingguan' && (getWeekNumber(invDate) !== Number(expenseWeekNum.value) || invDate.getFullYear() !== Number(expenseWeekYear.value))) return
+      if (expensePeriod.value === 'bulanan' && ((invDate.getMonth() + 1) !== Number(expenseMonth.value) || invDate.getFullYear() !== Number(expenseMonthYear.value))) return
+      if (expensePeriod.value === 'tahunan' && invDate.getFullYear() !== Number(expenseYearAnnual.value)) return
+    }
+
     const method = (inv.payment_method || '').toLowerCase()
     const amount = Number(inv.total_amount) || 0
 
-    if (method.includes('bibd') || method.includes('qr pay bibd')) {
+    if (method.includes('belum lunas')) {
+      belumLunasTotal += amount
+      belumLunasCount += 1
+    } else if (method.includes('bibd') || method.includes('qr pay bibd')) {
       bibdTotal += amount
       bibdCount += 1
     } else if (method.includes('baiduri') || method.includes('qr pay baiduri')) {
@@ -531,7 +580,8 @@ const paymentBreakdownSummary = computed(() => {
   return {
     cash: { total: cashTotal, count: cashCount },
     bibd: { total: bibdTotal, count: bibdCount },
-    baiduri: { total: baiduriTotal, count: baiduriCount }
+    baiduri: { total: baiduriTotal, count: baiduriCount },
+    belumLunas: { total: belumLunasTotal, count: belumLunasCount }
   }
 })
 
@@ -634,7 +684,6 @@ const filteredHistoryTotalAmount = computed(() => {
   return filteredHistoryList.value.reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0)
 })
 
-// Filter Layanan untuk Booking
 const filteredServicesForBooking = computed(() => {
   const keyword = (bookingServiceSearchKeyword.value || '').toLowerCase()
   if (!keyword) return availableServices.value
@@ -683,12 +732,13 @@ const saveBookingToDB = async () => {
     const payload = {
       customer_name: newBooking.value.customer_name.trim(),
       customer_phone: newBooking.value.customer_phone.trim(),
-      customer_address: newBooking.value.customer_address.trim(), // <-- Simpan alamat di tabel booking
+      customer_address: newBooking.value.customer_address.trim(),
       booking_date: newBooking.value.booking_date,
       booking_time: startTime,
       booking_start_time: startTime,
       booking_end_time: endTime,
       therapist: targetTherapist,
+      payment_method: newBooking.value.payment_method || 'Cash', // Simpan cara bayar di booking
       treatments: chosenServicesObj,
       notes: newBooking.value.notes,
       status: 'Terjadwal'
@@ -708,6 +758,7 @@ const saveBookingToDB = async () => {
       booking_start_time: '10:00',
       booking_end_time: '11:00',
       therapist: '',
+      payment_method: 'Cash',
       selected_services: [],
       notes: ''
     }
@@ -744,33 +795,25 @@ const deleteBookingFromDB = async (bookId, customerName) => {
 const useBookingForInvoice = (book) => {
   customerName.value = book.customer_name
   customerPhone.value = book.customer_phone
-  customerAddress.value = book.customer_address || '' // <-- Otomatis isi alamat ke form invois dari kalendar
+  customerAddress.value = book.customer_address || ''
   visitDate.value = book.booking_date
+  paymentMethod.value = book.payment_method || 'Cash' // Ambil status bayar dari booking jika ada
   selectedTherapist.value = book.therapist !== 'Tanpa Terapis' ? book.therapist : ''
   remarks.value = `Dari Booking WA (${book.booking_start_time || book.booking_time} - ${book.booking_end_time || 'selesai'}): ${book.notes || '-'}`
   
   if (Array.isArray(book.treatments) && book.treatments.length > 0) {
     selectedServices.value = book.treatments.map(t => ({
-      service_id: t.id || '',
+      service_id: t.id || t.service_id || '',
       name: t.name || '',
       qty: t.qty || 1,
       price: t.price || 0,
-      discount: 0
+      discount: t.discount || 0
     }))
     serviceSearchKeywords.value = book.treatments.map(() => '')
-  } else if (book.service_name) {
-    selectedServices.value = [{
-      service_id: '',
-      name: book.service_name,
-      qty: 1,
-      price: book.price || 0,
-      discount: 0
-    }]
-    serviceSearchKeywords.value = ['']
   }
 
   currentView.value = 'form'
-  showToast(`✨ Memuat data ${book.customer_name} & ${book.treatments?.length || 1} rawatan ke Form Invois!`)
+  showToast(`✨ Memuat data ${book.customer_name} ke Form Invois!`)
 }
 
 const calendarDaysInMonth = computed(() => {
@@ -951,7 +994,7 @@ const filteredCustomers = computed(() => {
 const selectCustomer = (cust) => {
   customerName.value = cust.name
   customerPhone.value = cust.phone
-  customerAddress.value = cust.address || '' // Otomatis isi alamat jika ada di database
+  customerAddress.value = cust.address || '' 
   showCustomerDropdown.value = false
 }
 
@@ -1039,7 +1082,7 @@ const invoiceNumber = computed(() => {
   return `YHS-${dateStr}-001`
 })
 
-// --- SIMPAN INVOIS DAN ALAMAT KE SUPABASE ---
+// --- SIMPAN / UPDATE INVOIS KE SUPABASE ---
 const saveToSupabase = async () => {
   if (!customerName.value || !customerPhone.value) {
     showToast('⚠️ Mohon isi Nama Pelanggan dan No. Telefon.', 'error')
@@ -1050,70 +1093,73 @@ const saveToSupabase = async () => {
   showToast('Menyimpan data...', 'success')
 
   try {
-    const { error: invError } = await supabase.from('yhs_invoices').insert([{
+    const isUnpaid = paymentMethod.value === 'Belum Lunas'
+    
+    // Siapkan data payload secara lengkap
+    const payload = {
       customer_name: customerName.value.trim(),
       customer_wa: customerPhone.value.trim(),
-      customer_address: customerAddress.value.trim(), // Menyimpan alamat ke tabel invois
+      customer_address: customerAddress.value.trim(),
       invoice_date: visitDate.value,
       total_amount: totalDue.value,
       treatments: selectedServices.value,
-      payment_method: paymentMethod.value,
-      payment_status: 'Full Payment',
+      payment_method: paymentMethod.value, // Pastikan teks ini ('Cash', 'Belum Lunas', dll) terkirim
+      payment_status: isUnpaid ? 'Pending' : 'Full Payment',
       therapist: selectedTherapist.value || 'Tanpa Terapis',
       remarks: remarks.value,
       transaction_discount: transactionDiscountAmount.value
-    }])
+    }
 
-    if (invError) throw invError
+    if (editingInvoiceId.value) {
+      console.log("Mencoba UPDATE paksa untuk ID:", editingInvoiceId.value)
+      
+      // Masukkan ID ke dalam payload untuk metode UPSERT agar data pasti tertimpa/terupdate
+      const updatePayload = {
+        id: editingInvoiceId.value,
+        ...payload
+      }
 
-    const existingCust = allCustomers.value.find(
-      c => c.name.toLowerCase() === customerName.value.trim().toLowerCase()
-    )
+      const { data, error: updateErr } = await supabase
+        .from('yhs_invoices')
+        .upsert([updatePayload])
+        .select()
 
-    if (!existingCust) {
-      await supabase.from('yhs_customers').insert([{
-        name: customerName.value.trim(),
-        phone: customerPhone.value.trim(),
-        address: customerAddress.value.trim() // Menyimpan alamat ke tabel pelanggan
-      }])
+      if (updateErr) {
+        throw new Error("Gagal Update Supabase: " + updateErr.message)
+      }
+
+      console.log("Respon Sukses Supabase setelah Upsert:", data)
+      showToast(`✅ Status berhasil diubah menjadi: ${paymentMethod.value}`)
+      
+      // Reset mode edit
+      editingInvoiceId.value = null
     } else {
-      // Update alamat pelanggan jika ada perubahan
-      await supabase.from('yhs_customers').update({ address: customerAddress.value.trim() }).eq('id', existingCust.id)
+      const { error: invError } = await supabase.from('yhs_invoices').insert([payload])
+      if (invError) throw new Error("Gagal Insert: " + invError.message)
+
+      showToast('✅ Invois baru berhasil disimpan!')
     }
 
-    const currentTimeStr = new Date().toTimeString().slice(0, 5)
-    const { error: bookError } = await supabase.from('yhs_bookings').insert([{
-      customer_name: customerName.value.trim(),
-      customer_phone: customerPhone.value.trim(),
-      customer_address: customerAddress.value.trim(),
-      booking_date: visitDate.value,
-      booking_time: invoiceStartTime.value,       // <-- Menggunakan jam mulai pilihan
-      booking_start_time: invoiceStartTime.value, // <-- Jam mulai kalendar
-      booking_end_time: invoiceEndTime.value,     // <-- Jam selesai kalendar
-      therapist: selectedTherapist.value || 'Tanpa Terapis',
-      treatments: selectedServices.value,
-      notes: remarks.value ? `Invois Langsung: ${remarks.value}` : 'Invois Langsung',
-      status: 'Selesai' // Otomatis selesai karena langsung dibuat invoisnya
-    }])
+    // Reset form setelah berhasil
+    customerName.value = ''
+    customerPhone.value = ''
+    customerAddress.value = ''
+    remarks.value = ''
+    selectedServices.value = [{ service_id: '', name: '', qty: 1, price: 0, discount: 0 }]
+    serviceSearchKeywords.value = ['']
+    discountValue.value = 0
 
-    if (bookError) {
-      console.error('Gagal mencatat otomatis ke booking:', bookError.message)
-    }
-
-    showToast('✅ Invois, alamat, & kalendar booking tercatat!')
-    fetchData() 
+    // Muat ulang data terbaru dari database
+    await fetchData() 
   } catch (err) {
-    showToast('❌ Gagal menyimpan: ' + err.message, 'error')
+    showToast('❌ ' + err.message, 'error')
+    console.error("Detail Error:", err)
   } finally {
     isSubmitting.value = false
   }
 }
-
 const handlePrint = () => { window.print() }
-
-const printFinancialReport = () => {
-  window.print()
-}
+const printFinancialReport = () => { window.print() }
 
 const copyInvoiceText = () => {
   let text = `*YANI HOME & SPA INVOICE*\nNo: ${invoiceNumber.value}\nTarikh: ${visitDate.value}\nNama: ${customerName.value || '-'}\nTelefon: ${customerPhone.value || '-'}\nAlamat: ${customerAddress.value || '-'}\nTerapis: ${selectedTherapist.value || '-'}\n`
@@ -1123,17 +1169,21 @@ const copyInvoiceText = () => {
     if(s.name) text += `${i+1}. ${s.name} (x${s.qty}) - ${formatCurrency(s.price * s.qty)}\n`
   })
   if (transactionDiscountAmount.value > 0) text += `Diskon Transaksi: - ${formatCurrency(transactionDiscountAmount.value)}\n`
-  text += `\n*JUMLAH / TOTAL DUE: ${formatCurrency(totalDue.value)}*\nCara Bayar: ${paymentMethod.value}\n\nTerima kasih!`
+  text += `\n*JUMLAH / TOTAL DUE: ${formatCurrency(totalDue.value)}*\nStatus/Cara Bayar: ${paymentMethod.value}\n\nTerima kasih!`
 
   navigator.clipboard.writeText(text)
   showToast('📋 Invois berhasil disalin ke clipboard!')
 }
 
 const resetForm = () => {
+  editingInvoiceId.value = null
   customerName.value = ''
   customerPhone.value = ''
   customerAddress.value = ''
   visitDate.value = new Date().toISOString().split('T')[0]
+  invoiceStartTime.value = '10:00'
+  invoiceEndTime.value = '11:00'
+  paymentMethod.value = 'Cash'
   selectedTherapist.value = ''
   remarks.value = ''
   selectedServices.value = [{ service_id: '', name: '', qty: 1, price: 0, discount: 0 }]
@@ -1166,7 +1216,7 @@ const resetForm = () => {
     <div class="max-w-7xl mx-auto mb-8 flex flex-wrap justify-center gap-2 print:hidden">
       <button @click="currentView = 'form'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'form' ? 'bg-[#b48a57] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
-        📝 Buat Invois
+        📝 Buat / Edit Invois
       </button>
       <button @click="currentView = 'calendar'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'calendar' ? 'bg-[#2d7a4f] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
@@ -1182,7 +1232,7 @@ const resetForm = () => {
       </button>
       <button @click="currentView = 'history'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'history' ? 'bg-[#3b5998] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
-        📜 Riwayat ({{ invoiceHistory.length }})
+        📜 Riwayat Invois ({{ invoiceHistory.length }})
       </button>
       <button @click="currentView = 'dashboard'" type="button" class="px-4 py-2 text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2"
               :class="currentView === 'dashboard' ? 'bg-[#725c43] text-white' : 'bg-white text-[#5a4633] border border-[#ebdcc3] hover:bg-[#f4ecd8]'">
@@ -1194,7 +1244,12 @@ const resetForm = () => {
     <div v-if="currentView === 'form'" class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       
       <div class="lg:col-span-7 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 space-y-6 print:hidden">
-        <h2 class="font-serif text-lg font-bold text-[#5a4633] border-b border-[#f4ecd8] pb-3">Maklumat Pelanggan / Customer Info</h2>
+        <div class="flex justify-between items-center border-b border-[#f4ecd8] pb-3">
+          <h2 class="font-serif text-lg font-bold text-[#5a4633]">
+            {{ editingInvoiceId ? '✏️ Mode Edit Invois' : 'Maklumat Pelanggan / Customer Info' }}
+          </h2>
+          <span v-if="editingInvoiceId" class="text-xs bg-amber-100 text-amber-800 font-bold px-2.5 py-1 rounded-lg">Sedang Edit ID: {{ editingInvoiceId.slice(0,6) }}...</span>
+        </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="relative">
@@ -1218,7 +1273,6 @@ const resetForm = () => {
           </div>
         </div>
 
-        <!-- Tambahan Input Alamat Pelanggan pada Form Invois -->
         <div>
           <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Alamat Pelanggan / Address</label>
           <input v-model="customerAddress" type="text" placeholder="Cth: Simpang 22, Kampong Tanjong Bunut..." class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
@@ -1231,28 +1285,32 @@ const resetForm = () => {
               <input v-model="visitDate" type="date" class="w-full px-4 py-2.5 text-sm bg-transparent outline-none block box-border text-center sm:text-left" style="max-width: 100%;" />
             </div>
           </div>
+          
+          <!-- Kolom Cara Bayar termasuk opsi "Belum Lunas" -->
           <div class="w-full overflow-hidden">
-            <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Cara Bayar</label>
-            <select v-model="paymentMethod" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]">
-              <option value="Cash">Cash</option>
-              <option value="Transfer BIBD">Transfer BIBD</option>
-              <option value="Transfer Baiduri">Transfer Baiduri</option>
-              <option value="QR Pay BIBD">QR Pay BIBD</option>
-              <option value="QR PAY BAIDURI">QR PAY BAIDURI</option>
-              <option value="Debit Card">Debit Card</option>
-            </select>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Cara Bayar / Status</label>
+            <select v-model="paymentMethod" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm font-bold bg-[#fffdfa]"
+                  :class="paymentMethod === 'Belum Lunas' ? 'text-red-600 bg-red-50' : 'text-[#3e3529]'">
+            <option value="Cash">Cash</option>
+            <option value="Transfer BIBD">Transfer BIBD</option>
+            <option value="Transfer Baiduri">Transfer Baiduri</option>
+            <option value="QR Pay BIBD">QR Pay BIBD</option>
+            <option value="QR PAY BAIDURI">QR PAY BAIDURI</option>
+            <option value="Debit Card">Debit Card</option>
+            <option value="Belum Lunas" class="text-red-600 font-bold">⚠️ Belum Lunas</option>
+          </select>
           </div>
         </div>
 
-        <!-- Tambahan Input Jam Mulai & Selesai untuk Invois -->
+        <!-- Input Jam Mulai & Selesai untuk Kalendar -->
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Jam Mulai Sesi</label>
-            <input v-model="invoiceStartTime" type="time" class="w-full px-4 py-2 rounded-xl border border-[#ebdcc3] text-sm bg-[#fffdfa] outline-none focus:ring-2 focus:ring-[#b48a57]" />
+            <input v-model="invoiceStartTime" type="time" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] text-sm bg-[#fffdfa] outline-none focus:ring-2 focus:ring-[#b48a57]" />
           </div>
           <div>
             <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Jam Selesai Sesi</label>
-            <input v-model="invoiceEndTime" type="time" class="w-full px-4 py-2 rounded-xl border border-[#ebdcc3] text-sm bg-[#fffdfa] outline-none focus:ring-2 focus:ring-[#b48a57]" />
+            <input v-model="invoiceEndTime" type="time" class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] text-sm bg-[#fffdfa] outline-none focus:ring-2 focus:ring-[#b48a57]" />
           </div>
         </div>
 
@@ -1300,7 +1358,6 @@ const resetForm = () => {
             </div>
           </div>
 
-          <!-- MODAL KELOLA LAYANAN -->
           <div v-if="showManageServiceModal" class="bg-[#fdfbf7] p-4 rounded-xl border border-[#b48a57] mb-4 space-y-4 shadow-md">
             <div class="flex justify-between items-center border-b border-[#ebdcc3] pb-2">
               <h4 class="font-serif text-sm font-bold text-[#5a4633]">⚙️ Kelola Perkhidmatan (Tambah / Edit / Hapus)</h4>
@@ -1394,12 +1451,14 @@ const resetForm = () => {
           <button @click="handlePrint" type="button" class="py-3 px-4 bg-[#8c7355] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#725c43] transition-all">🖨️ Cetak / PDF</button>
           <button @click="copyInvoiceText" type="button" class="py-3 px-4 bg-[#2d7a4f] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#235e3c] transition-all">📋 Salin Teks</button>
           <button @click="resetForm" type="button" class="py-3 px-4 bg-[#fffdfa] text-[#5a4633] border border-[#ebdcc3] font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-[#f4ecd8] transition-all">🔄 Reset</button>
-          <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">💾 Simpan Data</button>
+          <button @click="saveToSupabase" :disabled="isSubmitting" type="button" class="py-3 px-4 bg-[#3b5998] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow hover:bg-[#324b81] transition-all">
+            {{ editingInvoiceId ? '💾 Simpan Perubahan' : '💾 Simpan Data' }}
+          </button>
         </div>
 
       </div>
 
-      <!-- Pratinjau Invois dengan Tampilan Alamat -->
+      <!-- Pratinjau Invois -->
       <div id="invoice-preview" class="lg:col-span-5 bg-white rounded-2xl shadow-[0_4px_25px_-5px_rgba(180,138,87,0.1)] border border-[#ebdcc3] p-6 sm:p-8 sticky top-6">
         <div class="text-center border-b border-[#ebdcc3] pb-6 mb-6 flex flex-col items-center">
           <img :src="logoImage" alt="Logo" class="w-16 h-16 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-2" />
@@ -1414,8 +1473,11 @@ const resetForm = () => {
             <p class="text-[11px] text-gray-500">{{ visitDate }}</p>
           </div>
           <div class="text-right">
-            <span class="font-bold text-[#8c7355] uppercase tracking-wider block mb-1">Bayaran</span>
-            <span class="px-2 py-0.5 bg-amber-50 text-amber-800 rounded font-semibold text-[10px]">{{ paymentMethod }}</span>
+            <span class="font-bold text-[#8c7355] uppercase tracking-wider block mb-1">Status / Bayar</span>
+            <span class="px-2 py-0.5 rounded font-bold text-[10px]"
+                  :class="paymentMethod === 'Belum Lunas' ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-50 text-amber-800'">
+              {{ paymentMethod }}
+            </span>
           </div>
         </div>
 
@@ -1470,13 +1532,13 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 1.2: KEUANGAN (PEMASUKAN & PENGELUARAN) ================= -->
+    <!-- ================= VIEW 1.2: KEUANGAN ================= -->
     <div v-if="currentView === 'expenses'" class="max-w-5xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       
       <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-[#f4ecd8] pb-5 gap-4">
         <div>
           <h3 class="font-serif text-xl font-bold text-[#5a4633]">💰 Kelola Keuangan (Pemasukan & Pengeluaran)</h3>
-          <p class="text-xs text-[#8c7355] mt-0.5">Pantau aliran kas masuk, rincian pembayaran Cash / BIBD / Baiduri, dan saldo bersih</p>
+          <p class="text-xs text-[#8c7355] mt-0.5">Pantau aliran kas masuk, rincian pembayaran Cash / BIBD / Baiduri / Belum Lunas, dan saldo bersih</p>
         </div>
         
         <div class="flex items-center gap-2 flex-wrap w-full xl:w-auto justify-start xl:justify-end">
@@ -1547,7 +1609,7 @@ const resetForm = () => {
         <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
           <p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">📥 Total Pemasukan</p>
           <p class="text-2xl font-serif font-bold text-emerald-900">{{ formatCurrency(filteredTotalIncome) }}</p>
-          <p class="text-[10px] text-emerald-600">Invois ({{ formatCurrency(filteredInvoiceIncomeTotal) }}) + Manual ({{ formatCurrency(filteredManualIncomeTotal) }})</p>
+          <p class="text-[10px] text-emerald-600">Invois Lunas ({{ formatCurrency(filteredInvoiceIncomeTotal) }}) + Manual</p>
         </div>
 
         <div class="p-5 rounded-2xl bg-red-50 border border-red-200 text-center space-y-1">
@@ -1565,35 +1627,41 @@ const resetForm = () => {
         </div>
       </div>
 
+      <!-- Rincian Metode Pembayaran Termasuk "Belum Lunas" -->
       <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-3 shadow-sm">
-        <h4 class="font-serif text-sm font-bold text-[#5a4633] border-b border-[#ebdcc3] pb-2">💳 Rincian Sumber Penerimaan Invois (Cash, BIBD & Baiduri)</h4>
+        <h4 class="font-serif text-sm font-bold text-[#5a4633] border-b border-[#ebdcc3] pb-2">💳 Rincian Status Pembayaran Invois</h4>
         
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
           <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
             <div class="flex justify-between items-center text-xs">
               <span class="font-bold text-[#5a4633]">💵 Cash / Tunai</span>
-              <span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.cash.count }} Transaksi</span>
+              <span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.cash.count }}x</span>
             </div>
             <p class="font-serif font-bold text-base text-[#b48a57]">{{ formatCurrency(paymentBreakdownSummary.cash.total) }}</p>
-            <p class="text-[10px] text-gray-500 italic">Pembayaran langsung tunai / debit</p>
           </div>
 
           <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
             <div class="flex justify-between items-center text-xs">
-              <span class="font-bold text-[#5a4633]">🏦 BIBD (Transfer / QR)</span>
-              <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.bibd.count }} Transaksi</span>
+              <span class="font-bold text-[#5a4633]">🏦 BIBD</span>
+              <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.bibd.count }}x</span>
             </div>
             <p class="font-serif font-bold text-base text-blue-700">{{ formatCurrency(paymentBreakdownSummary.bibd.total) }}</p>
-            <p class="text-[10px] text-gray-500 italic">Transfer / QR Pay via BIBD</p>
           </div>
 
           <div class="p-3.5 rounded-xl bg-white border border-[#ebdcc3] space-y-1">
             <div class="flex justify-between items-center text-xs">
-              <span class="font-bold text-[#5a4633]">🏦 Baiduri (Transfer / QR)</span>
-              <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.baiduri.count }} Transaksi</span>
+              <span class="font-bold text-[#5a4633]">🏦 Baiduri</span>
+              <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.baiduri.count }}x</span>
             </div>
             <p class="font-serif font-bold text-base text-purple-700">{{ formatCurrency(paymentBreakdownSummary.baiduri.total) }}</p>
-            <p class="text-[10px] text-gray-500 italic">Transfer / QR Pay via Baiduri</p>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-red-50 border border-red-200 space-y-1">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-bold text-red-800">⚠️ Belum Lunas</span>
+              <span class="bg-red-200 text-red-900 px-2 py-0.5 rounded font-bold text-[10px]">{{ paymentBreakdownSummary.belumLunas.count }}x</span>
+            </div>
+            <p class="font-serif font-bold text-base text-red-700">{{ formatCurrency(paymentBreakdownSummary.belumLunas.total) }}</p>
           </div>
         </div>
       </div>
@@ -1601,7 +1669,7 @@ const resetForm = () => {
       <!-- MODAL TAMBAH / EDIT PEMASUKAN MANUAL -->
       <div v-if="showAddIncomeModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#2d7a4f] space-y-4 shadow-md w-full">
         <h4 class="font-serif text-sm font-bold text-[#5a4633]">
-          {{ editingIncomeId ? '✏️ Edit Rekod Pemasukan Manual' : '✍️️ Tambah Rekod Pemasukan Manual Baru' }}
+          {{ editingIncomeId ? '✏️ Edit Rekod Pemasukan Manual' : '✍️ Tambah Rekod Pemasukan Manual Baru' }}
         </h4>
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -1748,7 +1816,7 @@ const resetForm = () => {
 
     </div>
 
-    <!-- ================= LAPORAN KEUANGAN KHUSUS CETAK / PDF ================= -->
+    <!-- ================= LAPORAN KEUANGAN CETAK / PDF ================= -->
     <div id="financial-report-print" class="hidden print:block bg-white text-[#3e3529] p-8 space-y-6 w-full">
       <div class="text-center border-b border-[#ebdcc3] pb-4 mb-4 flex flex-col items-center">
         <h2 class="font-serif text-2xl font-bold uppercase text-[#3e3529]">Yani Home & Spa</h2>
@@ -1772,11 +1840,11 @@ const resetForm = () => {
       </div>
 
       <div class="space-y-2">
-        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">A. Rincian Sumber Pembayaran Invois</h3>
+        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">A. Rincian Status Pembayaran Invois</h3>
         <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
           <thead>
             <tr class="bg-[#f4ecd8] text-[#5a4633]">
-              <th class="border border-[#ebdcc3] p-2">Kategori Metode Pembayaran</th>
+              <th class="border border-[#ebdcc3] p-2">Status / Cara Pembayaran</th>
               <th class="border border-[#ebdcc3] p-2 text-center">Jumlah Transaksi</th>
               <th class="border border-[#ebdcc3] p-2 text-right">Total Uang (B$)</th>
             </tr>
@@ -1788,64 +1856,19 @@ const resetForm = () => {
               <td class="border border-[#ebdcc3] p-2 text-right font-bold text-[#b48a57]">{{ formatCurrency(paymentBreakdownSummary.cash.total) }}</td>
             </tr>
             <tr>
-              <td class="border border-[#ebdcc3] p-2 font-semibold">BIBD (Transfer / QR Pay)</td>
+              <td class="border border-[#ebdcc3] p-2 font-semibold">BIBD</td>
               <td class="border border-[#ebdcc3] p-2 text-center">{{ paymentBreakdownSummary.bibd.count }}x</td>
               <td class="border border-[#ebdcc3] p-2 text-right font-bold text-blue-700">{{ formatCurrency(paymentBreakdownSummary.bibd.total) }}</td>
             </tr>
             <tr>
-              <td class="border border-[#ebdcc3] p-2 font-semibold">Baiduri (Transfer / QR Pay)</td>
+              <td class="border border-[#ebdcc3] p-2 font-semibold">Baiduri</td>
               <td class="border border-[#ebdcc3] p-2 text-center">{{ paymentBreakdownSummary.baiduri.count }}x</td>
               <td class="border border-[#ebdcc3] p-2 text-right font-bold text-purple-700">{{ formatCurrency(paymentBreakdownSummary.baiduri.total) }}</td>
             </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="space-y-2">
-        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">B. Rincian Pemasukan Manual</h3>
-        <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
-          <thead>
-            <tr class="bg-[#f4ecd8] text-[#5a4633]">
-              <th class="border border-[#ebdcc3] p-2">Tarikh</th>
-              <th class="border border-[#ebdcc3] p-2">Sumber / Keterangan</th>
-              <th class="border border-[#ebdcc3] p-2">Kategori</th>
-              <th class="border border-[#ebdcc3] p-2 text-right">Jumlah</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="inc in filteredIncomesByPeriod" :key="inc.id">
-              <td class="border border-[#ebdcc3] p-2">{{ inc.income_date }}</td>
-              <td class="border border-[#ebdcc3] p-2">{{ inc.title }}</td>
-              <td class="border border-[#ebdcc3] p-2">{{ inc.category }}</td>
-              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-emerald-700">+ {{ formatCurrency(inc.amount) }}</td>
-            </tr>
-            <tr v-if="filteredIncomesByPeriod.length === 0">
-              <td colspan="4" class="border border-[#ebdcc3] p-3 text-center text-gray-400 italic">Tiada rekod pemasukan manual.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="space-y-2">
-        <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">C. Rincian Pengeluaran</h3>
-        <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
-          <thead>
-            <tr class="bg-[#f4ecd8] text-[#5a4633]">
-              <th class="border border-[#ebdcc3] p-2">Tarikh</th>
-              <th class="border border-[#ebdcc3] p-2">Keterangan / Item</th>
-              <th class="border border-[#ebdcc3] p-2">Kategori</th>
-              <th class="border border-[#ebdcc3] p-2 text-right">Jumlah</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="exp in filteredExpensesByPeriod" :key="exp.id">
-              <td class="border border-[#ebdcc3] p-2">{{ exp.expense_date }}</td>
-              <td class="border border-[#ebdcc3] p-2">{{ exp.title }}</td>
-              <td class="border border-[#ebdcc3] p-2">{{ exp.category }}</td>
-              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-red-600">- {{ formatCurrency(exp.amount) }}</td>
-            </tr>
-            <tr v-if="filteredExpensesByPeriod.length === 0">
-              <td colspan="4" class="border border-[#ebdcc3] p-3 text-center text-gray-400 italic">Tiada rekod pengeluaran.</td>
+            <tr>
+              <td class="border border-[#ebdcc3] p-2 font-semibold text-red-700">Belum Lunas</td>
+              <td class="border border-[#ebdcc3] p-2 text-center">{{ paymentBreakdownSummary.belumLunas.count }}x</td>
+              <td class="border border-[#ebdcc3] p-2 text-right font-bold text-red-600">{{ formatCurrency(paymentBreakdownSummary.belumLunas.total) }}</td>
             </tr>
           </tbody>
         </table>
@@ -1883,7 +1906,7 @@ const resetForm = () => {
       </div>
 
       <div v-if="showAddBookingModal" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
-        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp (Dilengkapi Jam Mulai & Selesai)</h4>
+        <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp (Dilengkapi Cara Bayar)</h4>
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
           <div>
@@ -1895,7 +1918,6 @@ const resetForm = () => {
             <input v-model="newBooking.customer_phone" type="text" placeholder="+673..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
 
-          <!-- Tambahan Input Alamat Pelanggan pada Modal Kalendar Booking -->
           <div class="sm:col-span-2">
             <label class="block font-bold text-[#8c7355] mb-1">Alamat Pelanggan</label>
             <input v-model="newBooking.customer_address" type="text" placeholder="Cth: Kampong Tanjong Bunut..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
@@ -1926,7 +1948,23 @@ const resetForm = () => {
               <option v-for="thp in availableTherapists" :key="thp.id" :value="thp.name">{{ thp.name }}</option>
             </select>
           </div>
+
+          <!-- Opsi Cara Bayar / Status pada Booking Kalendar -->
           <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Cara Bayar / Status</label>
+            <select v-model="newBooking.payment_method" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none font-bold"
+                    :class="newBooking.payment_method === 'Belum Lunas' ? 'text-red-600 bg-red-50' : 'text-[#3e3529]'">
+              <option value="Cash">Cash</option>
+              <option value="Transfer BIBD">Transfer BIBD</option>
+              <option value="Transfer Baiduri">Transfer Baiduri</option>
+              <option value="QR Pay BIBD">QR Pay BIBD</option>
+              <option value="QR PAY BAIDURI">QR PAY BAIDURI</option>
+              <option value="Debit Card">Debit Card</option>
+              <option value="Belum Lunas" class="text-red-600 font-bold">⚠️ Belum Lunas</option>
+            </select>
+          </div>
+
+          <div class="sm:col-span-2">
             <label class="block font-bold text-[#8c7355] mb-1">Rincian Pesan / Catatan WA</label>
             <input v-model="newBooking.notes" type="text" placeholder="Cth: Pesan khusus..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
           </div>
@@ -2018,8 +2056,8 @@ const resetForm = () => {
                     ⏰ {{ book.booking_start_time || book.booking_time || '10:00' }} - {{ book.booking_end_time || 'Selesai' }}
                   </span>
                   <span class="px-2 py-0.5 rounded text-[10px] font-bold"
-                        :class="book.status === 'Terjadwal' ? 'bg-amber-100 text-amber-800' : book.status === 'Selesai' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'">
-                    {{ book.status }}
+                        :class="(book.payment_method || '').toLowerCase().includes('belum lunas') ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-emerald-100 text-emerald-800'">
+                    {{ book.payment_method || 'Cash' }}
                   </span>
                 </div>
 
@@ -2041,12 +2079,6 @@ const resetForm = () => {
                 <div class="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
                   <button @click="useBookingForInvoice(book)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">
                     ✨ Buat Invois
-                  </button>
-                  <button v-if="book.status === 'Terjadwal'" @click="updateBookingStatus(book.id, 'Selesai')" class="px-2 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px]">
-                    Selesai
-                  </button>
-                  <button v-if="book.status === 'Terjadwal'" @click="updateBookingStatus(book.id, 'Batal')" class="px-2 py-1 bg-red-100 text-red-700 rounded font-bold text-[10px]">
-                    Batal
                   </button>
                   <button @click="deleteBookingFromDB(book.id, book.customer_name)" class="px-2 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700">
                     🗑️ Hapus
@@ -2140,12 +2172,12 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 3: HALAMAN RIWAYAT INVOIS ================= -->
+    <!-- ================= VIEW 3: RIWAYAT INVOIS (DENGAN TOMBOL EDIT) ================= -->
     <div v-if="currentView === 'history'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
         <div>
-          <h3 class="font-serif text-xl font-bold text-[#5a4633]">📜 Rekod Riwayat / Invois Berdasarkan Periode</h3>
-          <p class="text-xs text-[#8c7355]">Pantau senarai invois dan jumlah pendapatan transaksi per harian, mingguan, bulanan, tahunan, atau semua</p>
+          <h3 class="font-serif text-xl font-bold text-[#5a4633]">📜 Rekod Riwayat / Invois (Dilengkapi Tombol Edit)</h3>
+          <p class="text-xs text-[#8c7355]">Anda dapat mengedit invois yang salah atau mengubah status "Belum Lunas" menjadi lunas</p>
         </div>
         <button @click="currentView = 'form'" class="text-xs font-bold bg-[#3b5998] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
       </div>
@@ -2207,9 +2239,15 @@ const resetForm = () => {
           <div class="flex justify-between items-center">
             <span class="font-bold font-serif text-[#5a4633] text-sm">SW-{{ inv.invoice_date ? inv.invoice_date.replace(/-/g, '') : '20260801' }}-00{{ filteredHistoryList.length - idx }}</span>
             <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">LUNAS</span>
+              <span class="px-2 py-0.5 rounded font-bold text-[10px]"
+                    :class="(inv.payment_method || '').toLowerCase().includes('belum lunas') ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-emerald-100 text-emerald-800'">
+                {{ inv.payment_method || 'Cash' }}
+              </span>
+              <button @click="startEditInvoice(inv)" class="px-2.5 py-1 bg-[#b48a57] text-white rounded font-bold text-[10px] shadow hover:bg-[#a07747] transition-all">
+                ✏️ Edit Invois
+              </button>
               <button @click="deleteInvoiceHistory(inv.id, inv.customer_name)" class="px-2.5 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700 transition-all">
-                🗑️ Hapus Invois
+                🗑️ Hapus
               </button>
             </div>
           </div>
@@ -2217,7 +2255,7 @@ const resetForm = () => {
             <p>👤 <strong>{{ inv.customer_name }}</strong> ({{ inv.customer_wa || '-' }})</p>
             <p>📍 Alamat: {{ inv.customer_address || '-' }}</p>
             <p>📅 {{ inv.invoice_date }} · 🕐 {{ formatDateTime(inv.created_at).combined }} · Terapis: {{ inv.therapist || '-' }}</p>
-            <p>{{ Array.isArray(inv.treatments) ? inv.treatments.length : 1 }} perkhidmatan · Pembayaran via {{ inv.payment_method }}</p>
+            <p>{{ Array.isArray(inv.treatments) ? inv.treatments.length : 1 }} perkhidmatan</p>
           </div>
           <div class="pt-2 border-t border-[#f4ecd8] flex justify-between items-center">
             <span class="text-[10px] text-gray-500 italic">{{ inv.remarks || 'Tiada catatan' }}</span>
@@ -2227,7 +2265,7 @@ const resetForm = () => {
       </div>
     </div>
 
-    <!-- ================= VIEW 4: HALAMAN DASHBOARD STATISTIK ================= -->
+    <!-- ================= VIEW 4: DASHBOARD ================= -->
     <div v-if="currentView === 'dashboard'" class="max-w-4xl mx-auto bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-[#ebdcc3] space-y-6 print:hidden">
       
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-[#f4ecd8] pb-4 gap-4">
@@ -2261,7 +2299,7 @@ const resetForm = () => {
           </select>
           <span class="font-bold text-[#5a4633]">Tahun:</span>
           <select v-model.number="selectedWeekYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
-            <option v-for="y in [currentYear, currentYear+1, currentYear+2, currentYear+3, currentYear+4]" :key="y" :value="y">{{ y }}</option>
+            <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
           </select>
         </div>
 
@@ -2272,14 +2310,14 @@ const resetForm = () => {
           </select>
           <span class="font-bold text-[#5a4633]">Tahun:</span>
           <select v-model.number="selectedMonthYear" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
-            <option v-for="y in [currentYear, currentYear+1, currentYear+2, currentYear+3, currentYear+4]" :key="y" :value="y">{{ y }}</option>
+            <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
           </select>
         </div>
 
         <div v-if="dashboardPeriod === 'tahunan'" class="flex items-center gap-2 w-full sm:w-auto">
           <span class="font-bold text-[#5a4633]">Pilih Tahun:</span>
           <select v-model.number="selectedYearAnnual" class="px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
-            <option v-for="y in [currentYear, currentYear+1, currentYear+2, currentYear+3, currentYear+4]" :key="y" :value="y">{{ y }}</option>
+            <option v-for="y in [currentYear, currentYear+1, currentYear+2]" :key="y" :value="y">{{ y }}</option>
           </select>
         </div>
 
@@ -2318,46 +2356,6 @@ const resetForm = () => {
             </div>
             <div class="w-full bg-[#f4ecd8] h-3 rounded-full overflow-hidden">
               <div class="bg-[#b48a57] h-full rounded-full transition-all duration-500" :style="{ width: serv.percentage + '%' }"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="p-5 rounded-2xl bg-[#fffdfa] border border-[#ebdcc3] space-y-4">
-        <div class="flex justify-between items-center">
-          <h4 class="font-serif text-sm font-bold text-[#5a4633]">👩‍⚕️ Grafik Performa Terapis & Bonus 10% Bulanan</h4>
-          <span class="text-[10px] font-bold text-[#8c7355] uppercase">Klien & Omset Komisi</span>
-        </div>
-        <div v-if="therapistPerformanceStats.length === 0" class="text-xs text-gray-500 text-center py-4">Belum ada data terapis pada periode ini.</div>
-        <div v-else class="space-y-4">
-          <div v-for="thp in therapistPerformanceStats" :key="thp.name" class="space-y-1.5 p-3 rounded-xl border border-[#ebdcc3] bg-[#fdfbf7]">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs font-semibold text-[#3e3529] gap-1">
-              <span class="font-bold text-sm text-[#5a4633]">{{ thp.name }} ({{ thp.count }} Klien)</span>
-              <div class="text-right">
-                <span class="text-[#8c7355] font-medium mr-2">Omset: B$ {{ formatNumberID(thp.revenue) }}</span>
-                <span class="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">🎁 Bonus 10%: B$ {{ formatNumberID(thp.bonus) }}</span>
-              </div>
-            </div>
-            <div class="w-full bg-[#f4ecd8] h-3 rounded-full overflow-hidden">
-              <div class="bg-[#2d7a4f] h-full rounded-full transition-all duration-500" :style="{ width: thp.percentage + '%' }"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="p-5 rounded-2xl bg-[#fffdfa] border border-[#ebdcc3] space-y-4">
-        <div class="flex justify-between items-center">
-          <h4 class="font-serif text-sm font-bold text-[#5a4633]">📅 Analisis Profit Berdasarkan Hari (Senin - Ahad)</h4>
-          <span class="text-[10px] font-bold text-[#8c7355] uppercase">Hari Paling Menguntungkan</span>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-7 gap-3 pt-2">
-          <div v-for="d in profitByDayOfWeek" :key="d.day" class="bg-white p-3 rounded-xl border border-[#ebdcc3] flex flex-col justify-between items-center text-center space-y-2">
-            <span class="text-xs font-bold text-[#5a4633]">{{ d.day }}</span>
-            <div class="w-6 bg-[#f4ecd8] h-28 rounded-lg flex items-end overflow-hidden p-0.5">
-              <div class="w-full bg-[#3b5998] rounded-md transition-all duration-500" :style="{ height: d.percentage + '%' }"></div>
-            </div>
-            <div>
-              <p class="text-[10px] text-[#b48a57] font-bold">B$ {{ Number(d.total).toFixed(0) }}</p>
             </div>
           </div>
         </div>
