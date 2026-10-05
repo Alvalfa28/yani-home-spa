@@ -11,6 +11,8 @@ const bookingList = ref([])
 const expenseList = ref([])
 const incomeList = ref([])
 const incomesAvailable = ref(false) // false bila tabel yhs_incomes belum ada
+const personalExpenseList = ref([])
+const personalAvailable = ref(false) // false bila tabel personal_expenses belum ada
 
 // Supabase TIDAK melempar error: ia mengembalikan { error }. Jadi dicek manual.
 const fetchTable = async (table, orderBy) => {
@@ -23,7 +25,7 @@ const fetchTable = async (table, orderBy) => {
 const fetchData = async () => {
   const { showToast } = useToast()
 
-  const [services, therapists, customers, invoices, bookings, expenses, incomes] = await Promise.all([
+  const [services, therapists, customers, invoices, bookings, expenses, incomes, personal] = await Promise.all([
     fetchTable('yhs_services', { column: 'name', ascending: true }),
     fetchTable('yhs_therapists', { column: 'name', ascending: true }),
     fetchTable('yhs_customers', { column: 'name', ascending: true }),
@@ -31,6 +33,7 @@ const fetchData = async () => {
     fetchTable('yhs_bookings'),
     fetchTable('yhs_expenses'),
     fetchTable('yhs_incomes'),
+    fetchTable('personal_expenses'),
   ])
 
   const failed = [services, therapists, customers, invoices].find((r) => r.error)
@@ -48,6 +51,9 @@ const fetchData = async () => {
 
   incomesAvailable.value = !incomes.error
   incomeList.value = incomes.error ? [] : incomes.data
+
+  personalAvailable.value = !personal.error
+  personalExpenseList.value = personal.error ? [] : personal.data
 }
 
 export function useMasterData() {
@@ -60,6 +66,8 @@ export function useMasterData() {
     expenseList,
     incomeList,
     incomesAvailable,
+    personalExpenseList,
+    personalAvailable,
     fetchData,
   }
 }

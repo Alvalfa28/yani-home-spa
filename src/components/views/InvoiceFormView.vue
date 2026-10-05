@@ -6,12 +6,15 @@ import PaymentMethodSelect from '../PaymentMethodSelect.vue'
 import ManageServicesPanel from '../ManageServicesPanel.vue'
 import ManageTherapistsPanel from '../ManageTherapistsPanel.vue'
 import InvoicePreview from '../InvoicePreview.vue'
+import { isUnpaid } from '../../utils/payment'
+import { formatCurrency } from '../../utils/format'
 
 const { availableServices, availableTherapists } = useMasterData()
 const {
   editingInvoiceId, invoiceNumber, customerName, customerPhone, customerAddress, visitDate,
   invoiceStartTime, invoiceEndTime, paymentMethod, remarks, selectedTherapist,
   serviceSearchKeywords, selectedServices, discountType, discountValue, isSubmitting,
+  isPartialPayment, paidInput, totalDue, paidNow, remainingDue,
   customerSuggestions, selectCustomer, getFilteredServices, selectService, addServiceRow, removeServiceRow,
   resetForm, saveInvoice, copyInvoiceText,
 } = useInvoiceForm()
@@ -86,6 +89,29 @@ const handlePrint = () => window.print()
         <div class="w-full overflow-hidden">
           <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Cara Bayar / Status</label>
           <PaymentMethodSelect v-model="paymentMethod" />
+        </div>
+      </div>
+
+      <!-- DP / bayar sebagian -->
+      <div v-if="!isUnpaid(paymentMethod)" class="p-4 rounded-xl border border-dashed border-[#b48a57] bg-[#fffdfa] space-y-3">
+        <label class="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" v-model="isPartialPayment" class="mt-0.5 w-4 h-4 rounded border-[#ebdcc3]" />
+          <span>
+            <span class="text-xs font-bold text-[#5a4633]">Pelanggan baru bayar DP (sebagian)</span>
+            <span class="block text-[11px] text-gray-500">Cth: paket 7 hari B$300, DP B$50. Yang masuk pemasukan hanya DP; sisanya dicatat di Keuangan → Pemasukan saat dilunasi.</span>
+          </span>
+        </label>
+        <div v-if="isPartialPayment" class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Jumlah DP Diterima (B$)</label>
+            <input v-model.number="paidInput" type="number" min="0" step="0.01" placeholder="0.00"
+                   class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-white font-bold" />
+          </div>
+          <div class="text-xs space-y-0.5 text-[#5a4633]">
+            <p>Total: <strong>{{ formatCurrency(totalDue) }}</strong></p>
+            <p>Diterima sekarang: <strong class="text-emerald-700">{{ formatCurrency(paidNow) }}</strong></p>
+            <p>Sisa tagihan: <strong class="text-red-600">{{ formatCurrency(remainingDue) }}</strong></p>
+          </div>
         </div>
       </div>
 

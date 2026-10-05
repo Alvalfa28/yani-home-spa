@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useMasterData } from './useMasterData'
 import { useToast } from './useToast'
 import { todayISO, toLocalISODate } from '../utils/period'
-import { DEFAULT_START_TIME, DEFAULT_END_TIME, NO_THERAPIST } from '../utils/constants'
+import { friendlyDbError } from '../utils/db'
+import { normalizePaymentMethod } from '../utils/payment'
+import { DEFAULT_END_TIME, NO_THERAPIST, PACKAGE_PAYMENT } from '../utils/constants'
 
 // State kalender di level modul agar bulan/tanggal terpilih tidak hilang saat pindah tab.
 const now = new Date()
@@ -13,21 +15,27 @@ const selectedCalendarDate = ref(todayISO())
 
 // Kolom bertipe `time` bisa mengembalikan 'HH:MM:SS'; bandingkan hanya 'HH:MM'.
 const toHM = (t) => String(t || '').slice(0, 5)
-const startOf = (b) => toHM(b.booking_start_time || b.booking_time) || DEFAULT_START_TIME
-const endOf = (b) => toHM(b.booking_end_time) || DEFAULT_END_TIME
+// Jam boleh kosong: '' artinya belum ditentukan.
+const startOf = (b) => toHM(b.booking_start_time || b.booking_time)
+const endOf = (b) => toHM(b.booking_end_time) || (startOf(b) ? DEFAULT_END_TIME : '')
 const isOverlapping = (s1, e1, s2, e2) => s1 < e2 && s2 < e1
-const byStartTime = (a, b) => startOf(a).localeCompare(startOf(b))
+// Sesi tanpa jam tampil paling bawah.
+const byStartTime = (a, b) => (startOf(a) || '99:99').localeCompare(startOf(b) || '99:99')
 
 export const blankBooking = (date = todayISO()) => ({
   customer_name: '',
   customer_phone: '',
   customer_address: '',
   booking_date: date,
-  booking_start_time: DEFAULT_START_TIME,
-  booking_end_time: DEFAULT_END_TIME,
+  booking_start_time: '',
+  booking_end_time: '',
   therapist: '',
   payment_method: 'Cash',
-  selected_services: [],
+  is_package: false,      // sesi lanjutan paket yang sudah dibayar (tanpa nominal)
+  was_package: false,
+  package_label: '',
+  selected_services: [],  // [{ id, qty, price }]
+  legacy_treatments: [],  // rawatan lama yang sudah tidak ada di menu; dipertahankan apa adanya
   notes: '',
 })
 
@@ -51,7 +59,6 @@ export function useBookings() {
     return days
   })
 
-  // Jumlah sesi aktif (tanpa yang dibatalkan) per tanggal, dihitung sekali.
   const bookingCountByDate = computed(() => {
     const counts = {}
     bookingList.value.forEach((b) => {
@@ -80,59 +87,148 @@ export function useBookings() {
     return columns
   })
 
-  // ---- Simpan ----
-  const saveBooking = async (form) => {
+  // ---- Paket: nomor sesi per pelanggan + nama paket ----
+  const packageKey = (b) =>
+    b.is_package && b.package_label
+      ? `${(b.customer_name || '').trim().toLowerCase()}|${b.package_label.trim().toLowerCase()}`
+      : null
+
+  const packageSessionInfo = computed(() => {
+    const groups = {}
+    bookingList.value.forEach((b) => {
+      const key = packageKey(b)
+      if (key && b.status !== 'Batal') (groups[key] ||= []).push(b)
+    })
+    const info = {}
+    Object.values(groups).forEach((list) => {
+      list
+        .slice()
+        .sort((a, b) => `${a.booking_date} ${startOf(a) || '99:99'}`.localeCompare(`${b.booking_date} ${startOf(b) || '99:99'}`))
+        .forEach((b, i) => { info[b.id] = { index: i + 1, total: list.length } })
+    })
+    return info
+  })
+
+  const knownPackageLabels = computed(() => [
+    ...new Set(bookingList.value.map((b) => (b.package_label || '').trim()).filter(Boolean)),
+  ])
+
+  // ---- Booking -> form (untuk edit) ----
+  const makeEditForm = (book) => {
+    const form = blankBooking(book.booking_date)
+    form.customer_name = book.customer_name || ''
+    form.customer_phone = book.customer_phone || ''
+    form.customer_address = book.customer_address || ''
+    form.booking_start_time = startOf(book)
+    form.booking_end_time = startOf(book) ? endOf(book) : ''
+    form.therapist = book.therapist && book.therapist !== NO_THERAPIST ? book.therapist : ''
+    form.is_package = !!book.is_package
+    form.was_package = !!book.is_package
+    form.package_label = book.package_label || ''
+    form.payment_method = book.is_package ? 'Cash' : normalizePaymentMethod(book.payment_method)
+    form.notes = book.notes || ''
+
+    ;(Array.isArray(book.treatments) ? book.treatments : []).forEach((t) => {
+      const id = t.id || t.service_id
+      const svc = availableServices.value.find((s) => String(s.id) === String(id))
+      if (svc) {
+        form.selected_services.push({ id: svc.id, qty: Number(t.qty) || 1, price: t.price ?? svc.default_price })
+      } else {
+        form.legacy_treatments.push(t)
+      }
+    })
+    return form
+  }
+
+  // ---- Simpan (baru atau edit) ----
+  const saveBooking = async (form, editingId = null) => {
     if (!form.customer_name.trim() || !form.booking_date) {
       showToast('Mohon isi Nama Pelanggan dan Tanggal Booking.', 'error')
       return false
     }
 
-    const start = toHM(form.booking_start_time) || DEFAULT_START_TIME
-    const end = toHM(form.booking_end_time) || DEFAULT_END_TIME
-    if (start >= end) {
+    const start = toHM(form.booking_start_time)
+    const end = toHM(form.booking_end_time)
+    if (!!start !== !!end) {
+      showToast('❌ Isi jam mulai dan jam selesai sekaligus, atau kosongkan keduanya dulu.', 'error')
+      return false
+    }
+    const timed = !!start && !!end
+    if (timed && start >= end) {
       showToast('❌ Jam selesai harus lebih besar dari jam mulai!', 'error')
+      return false
+    }
+    if (form.is_package && !form.package_label.trim()) {
+      showToast('❌ Isi nama paket (cth: Pantang 7 hari) agar sesi bisa dikelompokkan.', 'error')
       return false
     }
 
     const therapist = form.therapist || NO_THERAPIST
-    const conflict = bookingList.value.some((b) => {
-      if (b.booking_date !== form.booking_date || b.status === 'Batal') return false
-      const sameResource =
-        b.therapist === therapist || therapist === NO_THERAPIST || !b.therapist || b.therapist === NO_THERAPIST
-      return sameResource && isOverlapping(start, end, startOf(b), endOf(b))
-    })
-    if (conflict) {
-      showToast(`❌ Jam ${start} - ${end} sudah terisi/dibooking pada tanggal ini! Silakan pilih jam lain.`, 'error')
-      return false
+
+    // Bentrok jam hanya dicek bila jam diisi, dan hanya terhadap sesi lain yang punya jam.
+    if (timed) {
+      const conflict = bookingList.value.some((b) => {
+        if (editingId != null && String(b.id) === String(editingId)) return false
+        if (b.booking_date !== form.booking_date || b.status === 'Batal') return false
+        const bs = startOf(b)
+        const be = endOf(b)
+        if (!bs || !be) return false
+        const sameResource =
+          b.therapist === therapist || therapist === NO_THERAPIST || !b.therapist || b.therapist === NO_THERAPIST
+        return sameResource && isOverlapping(start, end, bs, be)
+      })
+      if (conflict) {
+        showToast(`❌ Jam ${start} - ${end} sudah terisi/dibooking pada tanggal ini! Silakan pilih jam lain.`, 'error')
+        return false
+      }
     }
 
     try {
-      const treatments = form.selected_services
-        .map((id) => availableServices.value.find((s) => s.id === id))
-        .filter(Boolean)
-        .map((s) => ({ id: s.id, name: s.name, price: s.default_price, qty: 1 }))
+      const treatments = [
+        ...form.selected_services
+          .map((entry) => {
+            const svc = availableServices.value.find((s) => String(s.id) === String(entry.id))
+            if (!svc) return null
+            return {
+              id: svc.id,
+              name: svc.name,
+              qty: Math.max(1, Number(entry.qty) || 1),
+              price: form.is_package ? 0 : Number(entry.price ?? svc.default_price) || 0,
+            }
+          })
+          .filter(Boolean),
+        ...(form.legacy_treatments || []),
+      ]
 
-      const { error } = await supabase.from('yhs_bookings').insert([{
+      const payload = {
         customer_name: form.customer_name.trim(),
         customer_phone: form.customer_phone.trim(),
         customer_address: form.customer_address.trim(),
         booking_date: form.booking_date,
-        booking_time: start,
-        booking_start_time: start,
-        booking_end_time: end,
+        booking_time: timed ? start : null,
+        booking_start_time: timed ? start : null,
+        booking_end_time: timed ? end : null,
         therapist,
-        payment_method: form.payment_method || 'Cash',
+        payment_method: form.is_package ? PACKAGE_PAYMENT : form.payment_method || 'Cash',
         treatments,
         notes: form.notes,
-        status: 'Terjadwal',
-      }])
+      }
+      // Kolom paket hanya dikirim bila perlu, supaya booking biasa tetap jalan sebelum migrasi.
+      if (form.is_package || form.was_package) {
+        payload.is_package = !!form.is_package
+        payload.package_label = form.is_package ? form.package_label.trim() : null
+      }
+
+      const { error } = editingId
+        ? await supabase.from('yhs_bookings').update(payload).eq('id', editingId)
+        : await supabase.from('yhs_bookings').insert([{ ...payload, status: 'Terjadwal' }])
       if (error) throw error
 
-      showToast('📅 Booking WhatsApp berhasil dicatat ke kalendar!')
+      showToast(editingId ? '✏️ Booking berhasil diperbarui!' : '📅 Booking berhasil dicatat ke kalendar!')
       await fetchData()
       return true
     } catch (err) {
-      showToast('Gagal menyimpan booking: ' + err.message, 'error')
+      showToast('Gagal menyimpan booking: ' + friendlyDbError(err), 'error')
       return false
     }
   }
@@ -160,9 +256,18 @@ export function useBookings() {
     }
   }
 
+  // Pindahkan tampilan kalender ke tanggal tertentu (setelah menyimpan/edit).
+  const focusDate = (dateStr) => {
+    const [y, m] = String(dateStr).split('-').map(Number)
+    calendarViewYear.value = y
+    calendarViewMonth.value = m
+    selectedCalendarDate.value = dateStr
+  }
+
   return {
     calendarViewMonth, calendarViewYear, selectedCalendarDate,
     calendarDaysInMonth, bookingCountByDate, bookingsGroupedByTherapist,
-    saveBooking, updateBookingStatus, deleteBooking,
+    packageSessionInfo, knownPackageLabels,
+    makeEditForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
   }
 }

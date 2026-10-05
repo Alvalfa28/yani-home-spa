@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useMasterData } from '../../composables/useMasterData'
 import { useBookings, blankBooking } from '../../composables/useBookings'
 import { useInvoiceForm } from '../../composables/useInvoiceForm'
@@ -11,34 +11,63 @@ import { isUnpaid } from '../../utils/payment'
 import PaymentMethodSelect from '../PaymentMethodSelect.vue'
 
 const { goTo } = useNavigation()
-const { availableServices, availableTherapists, bookingList } = useMasterData()
+const { availableServices, availableTherapists } = useMasterData()
 const { loadBookingIntoForm } = useInvoiceForm()
 const {
   calendarViewMonth, calendarViewYear, selectedCalendarDate,
   calendarDaysInMonth, bookingCountByDate, bookingsGroupedByTherapist,
-  saveBooking, updateBookingStatus, deleteBooking,
+  packageSessionInfo, knownPackageLabels,
+  makeEditForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
 } = useBookings()
 
 const years = yearOptions()
 const dayNames = ['Ahad', 'Senin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu']
 
 const showForm = ref(false)
+const editingId = ref(null)
 const form = ref(blankBooking())
 const serviceKeyword = ref('')
 
-const openForm = () => {
+const openNew = () => {
+  editingId.value = null
   form.value = blankBooking(selectedCalendarDate.value)
   serviceKeyword.value = ''
   showForm.value = true
 }
 
-const filteredServices = () => {
-  const keyword = serviceKeyword.value.toLowerCase()
-  return keyword ? availableServices.value.filter((s) => s.name.toLowerCase().includes(keyword)) : availableServices.value
+const openEdit = (book) => {
+  editingId.value = book.id
+  form.value = makeEditForm(book)
+  serviceKeyword.value = ''
+  showForm.value = true
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+const closeForm = () => {
+  showForm.value = false
+  editingId.value = null
 }
 
 const submit = async () => {
-  if (await saveBooking(form.value)) showForm.value = false
+  const date = form.value.booking_date
+  if (await saveBooking(form.value, editingId.value)) {
+    focusDate(date) // langsung tampilkan tanggal yang baru disimpan
+    closeForm()
+  }
+}
+
+// ---- Pilih rawatan + qty ----
+const filteredServices = computed(() => {
+  const keyword = serviceKeyword.value.toLowerCase()
+  return keyword ? availableServices.value.filter((s) => s.name.toLowerCase().includes(keyword)) : availableServices.value
+})
+const selectedMap = computed(() => Object.fromEntries(form.value.selected_services.map((e) => [e.id, e])))
+
+const toggleService = (serv) => {
+  const list = form.value.selected_services
+  const idx = list.findIndex((e) => e.id === serv.id)
+  if (idx >= 0) list.splice(idx, 1)
+  else list.push({ id: serv.id, qty: 1, price: serv.default_price })
 }
 
 const statusClass = (status) => {
@@ -46,6 +75,14 @@ const statusClass = (status) => {
   if (status === 'Batal') return 'bg-gray-200 text-gray-600'
   return 'bg-amber-100 text-amber-800'
 }
+
+const timeLabel = (book) => {
+  const start = String(book.booking_start_time || book.booking_time || '').slice(0, 5)
+  if (!start) return null
+  return `${start} - ${String(book.booking_end_time || 'Selesai').slice(0, 5)}`
+}
+
+const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
 </script>
 
 <template>
@@ -54,18 +91,20 @@ const statusClass = (status) => {
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
       <div>
         <h3 class="font-serif text-xl font-bold text-[#5a4633]">📅 Kalendar Jadwal Booking Berdasarkan Terapis</h3>
-        <p class="text-xs text-[#8c7355]">Jadwal harian dikelompokkan otomatis ke dalam kolom masing-masing terapis (validasi jam bentrok aktif)</p>
+        <p class="text-xs text-[#8c7355]">Jam boleh dikosongkan dulu · bisa edit booking · sesi paket tanpa nominal · validasi jam bentrok hanya bila jam diisi</p>
       </div>
 
       <div class="flex items-center gap-3">
-        <button type="button" @click="openForm" class="text-xs font-bold bg-[#b48a57] text-white px-4 py-2.5 rounded-xl shadow hover:bg-[#a07747] transition-all">+ Tambah Booking Baru</button>
+        <button type="button" @click="openNew" class="text-xs font-bold bg-[#b48a57] text-white px-4 py-2.5 rounded-xl shadow hover:bg-[#a07747] transition-all">+ Tambah Booking Baru</button>
         <button type="button" @click="goTo('form')" class="text-xs font-bold bg-[#3e3529] text-white px-4 py-2.5 rounded-xl shadow">Kembali</button>
       </div>
     </div>
 
-    <!-- Form booking -->
+    <!-- Form booking (tambah / edit) -->
     <div v-if="showForm" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
-      <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Salin & Catat Pesan Booking WhatsApp (Dilengkapi Cara Bayar)</h4>
+      <h4 class="font-serif text-sm font-bold text-[#5a4633]">
+        {{ editingId ? '✏️ Edit Booking' : '📥 Catat Booking WhatsApp' }}
+      </h4>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
         <div>
@@ -89,15 +128,20 @@ const statusClass = (status) => {
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block font-bold text-[#8c7355] mb-1">Jam Mulai</label>
-            <input v-model="form.booking_start_time" type="time" class="w-full px-3 py-2 text-xs bg-white rounded-lg border border-[#ebdcc3] outline-none" />
+        <div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-bold text-[#8c7355] mb-1">Jam Mulai <span class="font-normal">(opsional)</span></label>
+              <input v-model="form.booking_start_time" type="time" class="w-full px-3 py-2 text-xs bg-white rounded-lg border border-[#ebdcc3] outline-none" />
+            </div>
+            <div>
+              <label class="block font-bold text-[#8c7355] mb-1">Jam Selesai <span class="font-normal">(opsional)</span></label>
+              <input v-model="form.booking_end_time" type="time" class="w-full px-3 py-2 text-xs bg-white rounded-lg border border-[#ebdcc3] outline-none" />
+            </div>
           </div>
-          <div>
-            <label class="block font-bold text-[#8c7355] mb-1">Jam Selesai</label>
-            <input v-model="form.booking_end_time" type="time" class="w-full px-3 py-2 text-xs bg-white rounded-lg border border-[#ebdcc3] outline-none" />
-          </div>
+          <button v-if="form.booking_start_time || form.booking_end_time" type="button"
+                  @click="form.booking_start_time = ''; form.booking_end_time = ''"
+                  class="mt-1 text-[10px] font-bold text-[#b48a57] hover:underline">Kosongkan jam (tentukan nanti)</button>
         </div>
 
         <div>
@@ -108,9 +152,27 @@ const statusClass = (status) => {
           </select>
         </div>
 
-        <div>
+        <div v-if="!form.is_package">
           <label class="block font-bold text-[#8c7355] mb-1">Cara Bayar / Status</label>
           <PaymentMethodSelect v-model="form.payment_method" compact />
+        </div>
+
+        <!-- Sesi paket -->
+        <div class="sm:col-span-2 p-3 rounded-xl border border-dashed border-[#b48a57] bg-white space-y-2">
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" v-model="form.is_package" class="mt-0.5 w-4 h-4 rounded border-[#ebdcc3]" />
+            <span>
+              <span class="font-bold text-[#5a4633]">Sesi paket (tanpa nominal)</span>
+              <span class="block text-[11px] text-gray-500">Untuk pelanggan yang sudah membayar paket (cth: pantang 7 hari) dan memilih hari sesi belakangan. Tidak ada tagihan baru.</span>
+            </span>
+          </label>
+          <div v-if="form.is_package">
+            <label class="block font-bold text-[#8c7355] mb-1">Nama Paket</label>
+            <input v-model="form.package_label" type="text" list="package-labels" placeholder="Cth: Pantang 7 hari (dibayar 1 Okt 2026)"
+                   class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+            <datalist id="package-labels"><option v-for="l in knownPackageLabels" :key="l" :value="l" /></datalist>
+            <p class="text-[10px] text-gray-500 mt-1">Pakai nama yang sama di setiap sesi agar nomor sesi (1/7, 2/7, ...) terhitung otomatis.</p>
+          </div>
         </div>
 
         <div class="sm:col-span-2">
@@ -119,24 +181,34 @@ const statusClass = (status) => {
         </div>
 
         <div class="sm:col-span-2 space-y-2">
-          <label class="block font-bold text-[#8c7355]">Pilih Rawatan (Bisa lebih dari 1)</label>
+          <label class="block font-bold text-[#8c7355]">Pilih Rawatan (centang, lalu isi jumlahnya)</label>
           <input v-model="serviceKeyword" type="text" placeholder="🔍 Cari nama rawatan..." class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none mb-2" />
 
-          <div class="max-h-44 overflow-y-auto space-y-1 bg-white p-3 rounded-xl border border-[#ebdcc3]">
-            <div v-for="serv in filteredServices()" :key="serv.id" class="flex items-center gap-2 py-1 border-b border-gray-50 last:border-none">
-              <input type="checkbox" :id="'srv-' + serv.id" :value="serv.id" v-model="form.selected_services" class="w-4 h-4 text-[#b48a57] rounded border-[#ebdcc3]" />
-              <label :for="'srv-' + serv.id" class="text-xs text-[#3e3529] cursor-pointer flex-1 flex justify-between">
+          <div class="max-h-52 overflow-y-auto space-y-1 bg-white p-3 rounded-xl border border-[#ebdcc3]">
+            <div v-for="serv in filteredServices" :key="serv.id" class="flex items-center gap-2 py-1 border-b border-gray-50 last:border-none">
+              <input type="checkbox" :id="'srv-' + serv.id" :checked="!!selectedMap[serv.id]" @change="toggleService(serv)" class="w-4 h-4 text-[#b48a57] rounded border-[#ebdcc3]" />
+              <label :for="'srv-' + serv.id" class="text-xs text-[#3e3529] cursor-pointer flex-1 flex justify-between gap-2">
                 <span>{{ serv.name }}</span>
-                <span class="font-bold text-[#b48a57]">B$ {{ serv.default_price }}</span>
+                <span v-if="!form.is_package" class="font-bold text-[#b48a57] whitespace-nowrap">B$ {{ serv.default_price }}</span>
               </label>
+              <div v-if="selectedMap[serv.id]" class="flex items-center gap-1">
+                <span class="text-[10px] font-bold text-[#8c7355]">Qty</span>
+                <input v-model.number="selectedMap[serv.id].qty" type="number" min="1" class="w-14 px-2 py-1 rounded border border-[#ebdcc3] text-xs outline-none" />
+              </div>
             </div>
           </div>
+
+          <p v-if="form.legacy_treatments.length" class="text-[10px] text-gray-500">
+            Rawatan lama yang sudah tidak ada di menu tetap disimpan: {{ form.legacy_treatments.map((t) => t.name).join(', ') }}
+          </p>
         </div>
       </div>
 
       <div class="flex justify-end gap-2 pt-2">
-        <button type="button" @click="showForm = false" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">Batal</button>
-        <button type="button" @click="submit" class="px-4 py-2 bg-[#2d7a4f] text-white rounded-xl text-xs font-bold">Simpan ke Kalendar</button>
+        <button type="button" @click="closeForm" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">Batal</button>
+        <button type="button" @click="submit" class="px-4 py-2 bg-[#2d7a4f] text-white rounded-xl text-xs font-bold">
+          {{ editingId ? 'Simpan Perubahan' : 'Simpan ke Kalendar' }}
+        </button>
       </div>
     </div>
 
@@ -196,12 +268,12 @@ const statusClass = (status) => {
             <div v-for="book in bookings" :key="book.id" class="p-3 rounded-lg border border-[#ebdcc3] bg-white text-xs space-y-2 shadow-sm"
                  :class="book.status === 'Batal' ? 'opacity-60' : ''">
               <div class="flex justify-between items-center border-b border-gray-100 pb-1.5 gap-2">
-                <span class="font-bold text-xs bg-[#b48a57] text-white px-2.5 py-0.5 rounded">
-                  ⏰ {{ (book.booking_start_time || book.booking_time || '10:00').slice(0, 5) }} - {{ (book.booking_end_time || 'Selesai').slice(0, 5) }}
-                </span>
-                <div class="flex items-center gap-1">
+                <span v-if="timeLabel(book)" class="font-bold text-xs bg-[#b48a57] text-white px-2.5 py-0.5 rounded">⏰ {{ timeLabel(book) }}</span>
+                <span v-else class="font-bold text-[10px] bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded">⏰ Jam belum ditentukan</span>
+                <div class="flex flex-wrap justify-end items-center gap-1">
                   <span class="px-2 py-0.5 rounded text-[10px] font-bold" :class="statusClass(book.status)">{{ book.status || 'Terjadwal' }}</span>
-                  <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                  <span v-if="book.is_package" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">📦 Paket</span>
+                  <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold"
                         :class="isUnpaid(book.payment_method) ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-emerald-100 text-emerald-800'">
                     {{ book.payment_method || 'Cash' }}
                   </span>
@@ -210,26 +282,40 @@ const statusClass = (status) => {
 
               <div>
                 <p class="font-serif font-bold text-sm text-[#5a4633]">{{ book.customer_name }}</p>
+                <p v-if="book.is_package" class="text-[11px] font-semibold text-indigo-700">
+                  {{ book.package_label || 'Paket' }}
+                  <span v-if="packageSessionInfo[book.id]">· Sesi {{ packageSessionInfo[book.id].index }}/{{ packageSessionInfo[book.id].total }} dijadwalkan</span>
+                </p>
                 <p class="text-gray-600 text-[11px]">📞 {{ book.customer_phone || '-' }}</p>
                 <p class="text-gray-500 text-[11px]">📍 {{ book.customer_address || '-' }}</p>
               </div>
 
               <div class="bg-[#fdfbf7] p-2 rounded border border-[#ebdcc3] space-y-0.5">
                 <p class="text-[10px] uppercase font-bold text-[#8c7355]">Rawatan Dipesan:</p>
+                <p v-if="!book.treatments || book.treatments.length === 0" class="text-[11px] text-gray-400 italic">Belum dipilih</p>
                 <div v-for="(tr, ti) in book.treatments" :key="ti" class="text-[11px] text-[#3e3529] font-medium">
-                  • {{ tr.name }} <span class="text-[#b48a57]">({{ formatCurrency(tr.price) }})</span>
+                  • {{ tr.name }}<span v-if="(tr.qty || 1) > 1" class="font-bold"> ×{{ tr.qty }}</span>
+                  <span v-if="showPrice(book, tr)" class="text-[#b48a57]"> ({{ formatCurrency(tr.price * (tr.qty || 1)) }})</span>
                 </div>
               </div>
 
               <p v-if="book.notes" class="text-gray-500 text-[11px] italic">Catatan: "{{ book.notes }}"</p>
 
               <div class="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
-                <button v-if="book.status !== 'Selesai' && book.status !== 'Batal'" type="button" @click="loadBookingIntoForm(book)"
-                        class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">✨ Buat Invois</button>
+                <button type="button" @click="openEdit(book)" class="px-2 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px] shadow hover:bg-[#324b81]">✏️ Edit</button>
+
+                <template v-if="book.status !== 'Selesai' && book.status !== 'Batal'">
+                  <button v-if="book.is_package" type="button" @click="updateBookingStatus(book.id, 'Selesai')"
+                          class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">✅ Tandai Selesai</button>
+                  <button v-else type="button" @click="loadBookingIntoForm(book)"
+                          class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">✨ Buat Invois</button>
+                </template>
+
                 <button v-if="book.status === 'Batal'" type="button" @click="updateBookingStatus(book.id, 'Terjadwal')"
-                        class="px-2 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px] shadow">↩️ Aktifkan</button>
+                        class="px-2 py-1 bg-[#8c7355] text-white rounded font-bold text-[10px] shadow">↩️ Aktifkan</button>
                 <button v-else-if="book.status !== 'Selesai'" type="button" @click="updateBookingStatus(book.id, 'Batal')"
                         class="px-2 py-1 bg-gray-500 text-white rounded font-bold text-[10px] shadow">🚫 Batal</button>
+
                 <button type="button" @click="deleteBooking(book.id, book.customer_name)"
                         class="px-2 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700">🗑️ Hapus</button>
               </div>

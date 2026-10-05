@@ -4,12 +4,13 @@ import { useNavigation } from '../composables/useNavigation'
 import { useMasterData } from '../composables/useMasterData'
 
 const { currentView, goTo } = useNavigation()
-const { bookingList, expenseList, incomeList, allCustomers, invoiceHistory } = useMasterData()
+const { bookingList, expenseList, incomeList, personalExpenseList, allCustomers, invoiceHistory } = useMasterData()
 
 const items = computed(() => [
   { key: 'form', label: '📝 Buat / Edit Invois', active: 'bg-[#b48a57] text-white' },
   { key: 'calendar', label: `📅 Kalendar (${bookingList.value.filter((b) => b.status === 'Terjadwal').length})`, active: 'bg-[#2d7a4f] text-white' },
   { key: 'expenses', label: `💸 Keuangan (${expenseList.value.length + incomeList.value.length})`, active: 'bg-[#8c4343] text-white' },
+  { key: 'personal', label: `🧾 Pribadi (${personalExpenseList.value.length})`, active: 'bg-[#6a4c93] text-white' },
   { key: 'customers', label: `👥 Pelanggan (${allCustomers.value.length})`, active: 'bg-[#2d7a4f] text-white' },
   { key: 'history', label: `📜 Riwayat Invois (${invoiceHistory.value.length})`, active: 'bg-[#3b5998] text-white' },
   { key: 'dashboard', label: '📊 Dashboard', active: 'bg-[#725c43] text-white' },

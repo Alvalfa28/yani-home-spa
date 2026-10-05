@@ -5,15 +5,33 @@ import { usePeriodFilter } from '../../composables/usePeriodFilter'
 import { useInvoiceForm } from '../../composables/useInvoiceForm'
 import { useNavigation } from '../../composables/useNavigation'
 import { formatCurrency, formatDateTime } from '../../utils/format'
-import { isUnpaid } from '../../utils/payment'
+import { paymentStatusOf } from '../../utils/receivable'
+import { useSettlement } from '../../composables/useSettlement'
+import { useToast } from '../../composables/useToast'
 import PeriodFilter from '../PeriodFilter.vue'
 
 const { goTo } = useNavigation()
-const { invoiceHistory } = useMasterData()
+const { invoiceHistory, incomeList, incomesAvailable } = useMasterData()
+const { requestSettlement } = useSettlement()
+const { showToast } = useToast()
 const { getInvoiceNumber, startEditInvoice, deleteInvoice } = useInvoiceForm()
 const { filter, matches } = usePeriodFilter()
 
 const list = computed(() => invoiceHistory.value.filter((inv) => matches(inv.invoice_date)))
+const statusOf = (inv) => paymentStatusOf(inv, incomeList.value)
+const badgeLabel = (inv) => {
+  const st = statusOf(inv)
+  if (st.outstanding) return st.isDownPayment ? `DP ${formatCurrency(st.paid)}` : 'Belum Lunas'
+  return /belum lunas/i.test(inv.payment_method || '') ? 'Lunas (pelunasan)' : inv.payment_method || 'Cash'
+}
+const settle = (inv) => {
+  if (!incomesAvailable.value) {
+    showToast('Pencatatan pelunasan belum aktif: tabel yhs_incomes belum ada (jalankan migrasi).', 'error')
+    return
+  }
+  requestSettlement(inv.id)
+  goTo('expenses')
+}
 const totalAmount = computed(() => list.value.reduce((acc, inv) => acc + (Number(inv.total_amount) || 0), 0))
 </script>
 
@@ -41,9 +59,10 @@ const totalAmount = computed(() => list.value.reduce((acc, inv) => acc + (Number
           <span class="font-bold font-serif text-[#5a4633] text-sm">{{ getInvoiceNumber(inv) }}</span>
           <div class="flex items-center gap-2">
             <span class="px-2 py-0.5 rounded font-bold text-[10px]"
-                  :class="isUnpaid(inv.payment_method) ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-emerald-100 text-emerald-800'">
-              {{ inv.payment_method || 'Cash' }}
+                  :class="statusOf(inv).outstanding ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-emerald-100 text-emerald-800'">
+              {{ badgeLabel(inv) }}
             </span>
+            <button v-if="statusOf(inv).outstanding" type="button" @click="settle(inv)" class="px-2.5 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c] transition-all">💰 Terima Pelunasan</button>
             <button type="button" @click="startEditInvoice(inv)" class="px-2.5 py-1 bg-[#b48a57] text-white rounded font-bold text-[10px] shadow hover:bg-[#a07747] transition-all">✏️ Edit Invois</button>
             <button type="button" @click="deleteInvoice(inv.id, inv.customer_name)" class="px-2.5 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700 transition-all">🗑️ Hapus</button>
           </div>
@@ -55,6 +74,7 @@ const totalAmount = computed(() => list.value.reduce((acc, inv) => acc + (Number
           <p>📅 {{ inv.invoice_date }} · 🕐 {{ formatDateTime(inv.created_at) }} · Terapis: {{ inv.therapist || '-' }}</p>
           <p v-if="inv.start_time">⏰ Sesi: {{ String(inv.start_time).slice(0, 5) }} - {{ String(inv.end_time || '').slice(0, 5) }}</p>
           <p>{{ Array.isArray(inv.treatments) ? inv.treatments.length : 1 }} perkhidmatan</p>
+          <p v-if="statusOf(inv).outstanding" class="text-red-600 font-semibold">Diterima {{ formatCurrency(statusOf(inv).paid) }} · Sisa {{ formatCurrency(statusOf(inv).remaining) }}</p>
         </div>
 
         <div class="pt-2 border-t border-[#f4ecd8] flex justify-between items-center">

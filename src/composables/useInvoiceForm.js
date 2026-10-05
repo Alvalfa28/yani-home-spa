@@ -7,11 +7,9 @@ import { todayISO } from '../utils/period'
 import { formatCurrency } from '../utils/format'
 import { isUnpaid, normalizePaymentMethod } from '../utils/payment'
 import { buildInvoiceNumberMap, nextInvoiceNumber } from '../utils/invoice'
+import { effectivePaid, settledAmount, round2 } from '../utils/receivable'
+import { looksLikeMissingColumn, MIGRATION_HINT } from '../utils/db'
 import { DEFAULT_START_TIME, DEFAULT_END_TIME, NO_THERAPIST } from '../utils/constants'
-
-// Kolom yang mungkin belum ada di database (lihat sql/migrations.sql).
-const looksLikeMissingColumn = (err) =>
-  !!err && (err.code === 'PGRST204' || /column|schema cache/i.test(err.message || ''))
 
 const emptyRow = () => ({ service_id: '', name: '', qty: 1, price: 0, discount: 0 })
 
@@ -34,10 +32,12 @@ const serviceSearchKeywords = ref([''])
 const selectedServices = ref([emptyRow()])
 const discountType = ref('percent')
 const discountValue = ref(0)
+const isPartialPayment = ref(false) // true = pelanggan baru bayar DP
+const paidInput = ref(0)            // jumlah DP yang diterima
 const isSubmitting = ref(false)
 
 export function useInvoiceForm() {
-  const { availableServices, allCustomers, invoiceHistory, fetchData } = useMasterData()
+  const { availableServices, allCustomers, invoiceHistory, incomeList, fetchData } = useMasterData()
   const { showToast } = useToast()
   const { goTo } = useNavigation()
 
@@ -53,6 +53,18 @@ export function useInvoiceForm() {
   })
 
   const totalDue = computed(() => Math.max(0, subtotal.value - transactionDiscountAmount.value))
+
+  // ---- DP / pembayaran sebagian ----
+  // Yang dihitung sebagai pemasukan hanya `paidNow`; sisanya dilunasi lewat Keuangan > Pemasukan.
+  const settledSoFar = computed(() =>
+    editingInvoiceId.value ? settledAmount(editingInvoiceId.value, incomeList.value) : 0,
+  )
+  const paidNow = computed(() => {
+    if (isUnpaid(paymentMethod.value)) return 0
+    if (!isPartialPayment.value) return totalDue.value
+    return Math.min(Math.max(Number(paidInput.value) || 0, 0), totalDue.value)
+  })
+  const remainingDue = computed(() => Math.max(0, round2(totalDue.value - paidNow.value - settledSoFar.value)))
 
   // ---- Nomor invois ----
   const invoiceNumbers = computed(() => buildInvoiceNumberMap(invoiceHistory.value))
@@ -118,6 +130,8 @@ export function useInvoiceForm() {
     serviceSearchKeywords.value = ['']
     discountType.value = 'percent'
     discountValue.value = 0
+    isPartialPayment.value = false
+    paidInput.value = 0
     if (!silent) showToast('Form berhasil di-reset.')
   }
 
@@ -157,6 +171,11 @@ export function useInvoiceForm() {
       discountType.value = 'nominal' // di database tersimpan sebagai nominal
       discountValue.value = Number(inv.transaction_discount) || 0
     }
+
+    const paid = effectivePaid(inv)
+    const total = Number(inv.total_amount) || 0
+    isPartialPayment.value = !isUnpaid(paymentMethod.value) && paid > 0 && paid < total - 0.005
+    paidInput.value = isPartialPayment.value ? paid : 0
 
     goTo('form')
     showToast(`✏️ Mode edit aktif untuk invois ${getInvoiceNumber(inv)}`)
@@ -201,6 +220,18 @@ export function useInvoiceForm() {
       return
     }
 
+    if (!isUnpaid(paymentMethod.value) && isPartialPayment.value) {
+      const dp = Number(paidInput.value) || 0
+      if (dp <= 0) {
+        showToast('⚠️ Isi jumlah DP yang diterima, atau matikan opsi DP.', 'error')
+        return
+      }
+      if (dp >= totalDue.value) {
+        showToast('⚠️ DP harus lebih kecil dari total. Untuk bayar penuh, matikan opsi DP.', 'error')
+        return
+      }
+    }
+
     isSubmitting.value = true
     try {
       const unpaid = isUnpaid(paymentMethod.value)
@@ -214,7 +245,7 @@ export function useInvoiceForm() {
         total_amount: totalDue.value,
         treatments,
         payment_method: paymentMethod.value,
-        payment_status: unpaid ? 'Pending' : 'Full Payment',
+        payment_status: remainingDue.value > 0 ? 'Pending' : 'Full Payment',
         therapist: selectedTherapist.value || NO_THERAPIST,
         remarks: remarks.value,
         transaction_discount: transactionDiscountAmount.value,
@@ -224,8 +255,11 @@ export function useInvoiceForm() {
       const optional = {
         start_time: invoiceStartTime.value || null,
         end_time: invoiceEndTime.value || null,
+        paid_amount: paidNow.value,
         ...(isEdit ? {} : { invoice_number: invoiceNumber.value }),
       }
+      // DP hanya valid bila kolom paid_amount ada; menyimpan tanpa kolom itu akan menghilangkan data DP.
+      const needsPaidColumn = paidNow.value > 0 && paidNow.value < totalDue.value
 
       // Edit memakai upsert (seperti kode asli) supaya pasti menimpa baris yang sama.
       const write = (record) =>
@@ -236,6 +270,9 @@ export function useInvoiceForm() {
       let { error } = await write({ ...payload, ...optional })
       let missingColumns = false
       if (error && looksLikeMissingColumn(error)) {
+        if (needsPaidColumn) {
+          throw new Error(`Kolom paid_amount belum ada, DP tidak bisa disimpan. ${MIGRATION_HINT}`)
+        }
         // Database belum punya kolom opsional -> simpan tanpa kolom tersebut.
         const retry = await write(payload)
         error = retry.error
@@ -248,12 +285,16 @@ export function useInvoiceForm() {
       }
 
       const method = paymentMethod.value
+      const savedPaid = paidNow.value
+      const savedRemaining = remainingDue.value
       showToast(
         missingColumns
           ? '⚠️ Tersimpan, tetapi jam sesi/nomor invois belum bisa disimpan. Jalankan sql/migrations.sql.'
-          : isEdit
-            ? `✅ Invois berhasil diperbarui (${method})`
-            : '✅ Invois baru berhasil disimpan!',
+          : savedRemaining > 0
+            ? `✅ Invois tersimpan. Diterima ${formatCurrency(savedPaid)}, sisa ${formatCurrency(savedRemaining)} bisa dilunasi di Keuangan.`
+            : isEdit
+              ? `✅ Invois berhasil diperbarui (${method})`
+              : '✅ Invois baru berhasil disimpan!',
         missingColumns ? 'error' : 'success',
       )
 
@@ -268,6 +309,8 @@ export function useInvoiceForm() {
       selectedServices.value = [emptyRow()]
       serviceSearchKeywords.value = ['']
       discountValue.value = 0
+      isPartialPayment.value = false
+      paidInput.value = 0
 
       await fetchData()
     } catch (err) {
@@ -309,7 +352,11 @@ export function useInvoiceForm() {
       if (s.name) text += `${i + 1}. ${s.name} (x${s.qty}) - ${formatCurrency(lineTotal(s))}\n`
     })
     if (transactionDiscountAmount.value > 0) text += `Diskon Transaksi: - ${formatCurrency(transactionDiscountAmount.value)}\n`
-    text += `\n*JUMLAH / TOTAL DUE: ${formatCurrency(totalDue.value)}*\nStatus/Cara Bayar: ${paymentMethod.value}\n\nTerima kasih!`
+    text += `\n*JUMLAH / TOTAL DUE: ${formatCurrency(totalDue.value)}*\nStatus/Cara Bayar: ${paymentMethod.value}\n`
+    if (remainingDue.value > 0) {
+      text += `Dibayar: ${formatCurrency(paidNow.value)}\n*Sisa Tagihan: ${formatCurrency(remainingDue.value)}*\n`
+    }
+    text += `\nTerima kasih!`
 
     try {
       await navigator.clipboard.writeText(text)
@@ -324,8 +371,9 @@ export function useInvoiceForm() {
     editingInvoiceId, customerName, customerPhone, customerAddress, visitDate,
     invoiceStartTime, invoiceEndTime, paymentMethod, remarks, selectedTherapist,
     serviceSearchKeywords, selectedServices, discountType, discountValue, isSubmitting,
+    isPartialPayment, paidInput,
     // computed
-    subtotal, transactionDiscountAmount, totalDue, invoiceNumber, customerSuggestions,
+    subtotal, transactionDiscountAmount, totalDue, paidNow, remainingDue, invoiceNumber, customerSuggestions,
     // actions
     getInvoiceNumber, getFilteredServices, selectService, addServiceRow, removeServiceRow,
     selectCustomer, resetForm, startEditInvoice, loadBookingIntoForm,

@@ -7,6 +7,8 @@ defineProps({
   totalExpense: { type: Number, required: true },
   netBalance: { type: Number, required: true },
   breakdown: { type: Object, required: true },
+  sourceBalances: { type: Array, default: () => [] },
+  outstandingTotal: { type: Number, default: 0 },
 })
 
 const rows = [
@@ -60,6 +62,32 @@ const rows = [
         </tbody>
       </table>
     </div>
+
+    <div class="space-y-2">
+      <h3 class="font-serif font-bold text-sm text-[#5a4633] uppercase">B. Saldo per Sumber Uang</h3>
+      <table class="w-full text-xs text-left border-collapse border border-[#ebdcc3]">
+        <thead>
+          <tr class="bg-[#f4ecd8] text-[#5a4633]">
+            <th class="border border-[#ebdcc3] p-2">Sumber Uang</th>
+            <th class="border border-[#ebdcc3] p-2 text-right">Masuk</th>
+            <th class="border border-[#ebdcc3] p-2 text-right">Keluar</th>
+            <th class="border border-[#ebdcc3] p-2 text-right">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in sourceBalances" :key="row.name">
+            <td class="border border-[#ebdcc3] p-2 font-semibold">{{ row.name }}</td>
+            <td class="border border-[#ebdcc3] p-2 text-right text-emerald-700">{{ formatCurrency(row.income) }}</td>
+            <td class="border border-[#ebdcc3] p-2 text-right text-red-600">{{ formatCurrency(row.expense) }}</td>
+            <td class="border border-[#ebdcc3] p-2 text-right font-bold">{{ formatCurrency(row.balance) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="text-xs text-gray-600">
+      Tagihan belum lunas (semua periode): <span class="font-bold text-red-600">{{ formatCurrency(outstandingTotal) }}</span>
+    </p>
 
     <div class="flex justify-between pt-12 text-xs">
       <div class="text-center">

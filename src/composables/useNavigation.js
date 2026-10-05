@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-// 'form' | 'calendar' | 'expenses' | 'customers' | 'history' | 'dashboard'
+// 'form' | 'calendar' | 'expenses' | 'personal' | 'customers' | 'history' | 'dashboard'
 const currentView = ref('form')
 
 export function useNavigation() {

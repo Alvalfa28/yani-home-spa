@@ -2,11 +2,11 @@
 import logoImage from '../assets/logo.jpg'
 import { useInvoiceForm } from '../composables/useInvoiceForm'
 import { formatCurrency } from '../utils/format'
-import { isUnpaid } from '../utils/payment'
 
 const {
   invoiceNumber, visitDate, paymentMethod, customerName, customerPhone, customerAddress,
   selectedTherapist, remarks, selectedServices, subtotal, transactionDiscountAmount, totalDue, lineTotal,
+  paidNow, remainingDue,
 } = useInvoiceForm()
 </script>
 
@@ -27,8 +27,8 @@ const {
       <div class="text-right">
         <span class="font-bold text-[#8c7355] uppercase tracking-wider block mb-1">Status / Bayar</span>
         <span class="px-2 py-0.5 rounded font-bold text-[10px]"
-              :class="isUnpaid(paymentMethod) ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-50 text-amber-800'">
-          {{ paymentMethod }}
+              :class="remainingDue > 0 ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-50 text-amber-800'">
+          {{ remainingDue > 0 && paidNow > 0 ? `DP · ${paymentMethod}` : paymentMethod }}
         </span>
       </div>
     </div>
@@ -76,6 +76,16 @@ const {
         <span>JUMLAH / TOTAL DUE</span>
         <span class="text-[#b48a57]">{{ formatCurrency(totalDue) }}</span>
       </div>
+      <template v-if="remainingDue > 0">
+        <div class="flex justify-between text-gray-600">
+          <span>{{ paidNow > 0 ? 'Dibayar (DP)' : 'Dibayar' }}</span>
+          <span>{{ formatCurrency(paidNow) }}</span>
+        </div>
+        <div class="flex justify-between font-bold text-red-600">
+          <span>Sisa Tagihan</span>
+          <span>{{ formatCurrency(remainingDue) }}</span>
+        </div>
+      </template>
     </div>
 
     <div class="mt-8 text-center border-t border-[#f4ecd8] pt-4 text-[10px] text-[#8c7355] font-serif italic">

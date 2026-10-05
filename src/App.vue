@@ -8,6 +8,7 @@ import ToastNotification from './components/ToastNotification.vue'
 import InvoiceFormView from './components/views/InvoiceFormView.vue'
 import CalendarView from './components/views/CalendarView.vue'
 import ExpensesView from './components/views/ExpensesView.vue'
+import PersonalExpensesView from './components/views/PersonalExpensesView.vue'
 import CustomersView from './components/views/CustomersView.vue'
 import HistoryView from './components/views/HistoryView.vue'
 import DashboardView from './components/views/DashboardView.vue'
@@ -33,6 +34,7 @@ onMounted(fetchData)
     <InvoiceFormView v-if="currentView === 'form'" />
     <CalendarView v-else-if="currentView === 'calendar'" />
     <ExpensesView v-else-if="currentView === 'expenses'" />
+    <PersonalExpensesView v-else-if="currentView === 'personal'" />
     <CustomersView v-else-if="currentView === 'customers'" />
     <HistoryView v-else-if="currentView === 'history'" />
     <DashboardView v-else-if="currentView === 'dashboard'" />
