@@ -1,13 +1,15 @@
 <script setup>
 import { computed } from 'vue'
 import { useMasterData } from '../../composables/useMasterData'
+import { useCustomers } from '../../composables/useCustomers'
 import { usePeriodFilter } from '../../composables/usePeriodFilter'
 import { useNavigation } from '../../composables/useNavigation'
 import { formatCurrency } from '../../utils/format'
 import PeriodFilter from '../PeriodFilter.vue'
 
 const { goTo } = useNavigation()
-const { allCustomers, invoiceHistory } = useMasterData()
+const { invoiceHistory } = useMasterData()
+const { customerDirectory, missingCustomers, syncMissingCustomers } = useCustomers()
 const { filter, matches } = usePeriodFilter()
 
 const keyOf = (name) => (name || '').trim().toLowerCase()
@@ -23,13 +25,12 @@ const groupedCustomers = computed(() => {
     if (inv.invoice_date && inv.invoice_date > stats[key].lastDate) stats[key].lastDate = inv.invoice_date
   })
 
-  const rows = allCustomers.value
-    .filter((c) => filter.period === 'semua' || stats[keyOf(c.name)])
+  const rows = customerDirectory.value
+    .filter((c) => filter.period === 'semua' || stats[c.key])
     .map((c) => {
-      const s = stats[keyOf(c.name)] || { count: 0, total: 0, lastDate: '-' }
+      const s = stats[c.key] || { count: 0, total: 0, lastDate: '-' }
       return { ...c, visitCount: s.count, totalSpent: s.total, lastVisit: s.lastDate }
     })
-    .sort((a, b) => a.name.localeCompare(b.name))
 
   const groups = {}
   rows.forEach((cust) => {
@@ -45,9 +46,17 @@ const groupedCustomers = computed(() => {
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
       <div>
         <h3 class="font-serif text-xl font-bold text-[#5a4633]">👥 Rekod Daftar Pelanggan Berdasarkan Periode</h3>
-        <p class="text-xs text-[#8c7355]">Pantau daftar kunjungan dan total belanja pelanggan per harian, mingguan, bulanan, tahunan, atau semua</p>
+        <p class="text-xs text-[#8c7355]">Pelanggan otomatis tercatat setiap invois atau booking disimpan</p>
       </div>
       <button type="button" @click="goTo('form')" class="text-xs font-bold bg-[#b48a57] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
+    </div>
+
+    <div v-if="missingCustomers.length" class="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <p class="text-amber-900">
+        <strong>{{ missingCustomers.length }} pelanggan</strong> dari invois/booking lama belum tercatat di tabel pelanggan.
+        Mereka tetap tampil di sini dan di pencarian nama.
+      </p>
+      <button type="button" @click="syncMissingCustomers" class="px-3 py-2 bg-[#2d7a4f] text-white rounded-lg font-bold text-[11px] shadow hover:bg-[#235e3c] whitespace-nowrap">🔄 Sinkronkan ke tabel pelanggan</button>
     </div>
 
     <PeriodFilter :filter="filter" accent="bg-[#2d7a4f]">Menampilkan pelanggan yang aktif pada periode ini</PeriodFilter>
@@ -59,7 +68,7 @@ const groupedCustomers = computed(() => {
     <div v-else class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
       <div v-for="(group, letter) in groupedCustomers" :key="letter" class="space-y-2">
         <div class="font-serif font-bold text-sm text-[#2d7a4f] border-b border-[#ebdcc3] pb-1 sticky top-0 bg-white z-10">{{ letter }}</div>
-        <div v-for="cust in group" :key="cust.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-1 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <div v-for="cust in group" :key="cust.key" class="p-4 rounded-xl border border-[#ebdcc3] bg-[#fffdfa] text-xs space-y-1 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <div>
             <p class="font-bold text-[#5a4633] text-sm">{{ cust.name }}</p>
             <p class="text-gray-600">📞 {{ cust.phone || '–' }} · 📍 {{ cust.address || '–' }}</p>

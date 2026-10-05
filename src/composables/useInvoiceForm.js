@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useMasterData } from './useMasterData'
 import { useToast } from './useToast'
 import { useNavigation } from './useNavigation'
+import { useCustomers } from './useCustomers'
 import { todayISO } from '../utils/period'
 import { formatCurrency } from '../utils/format'
 import { isUnpaid, normalizePaymentMethod } from '../utils/payment'
@@ -37,7 +38,8 @@ const paidInput = ref(0)            // jumlah DP yang diterima
 const isSubmitting = ref(false)
 
 export function useInvoiceForm() {
-  const { availableServices, allCustomers, invoiceHistory, incomeList, fetchData } = useMasterData()
+  const { availableServices, allCustomers, invoiceHistory, bookingList, incomeList, fetchData } = useMasterData()
+  const { ensureCustomer } = useCustomers()
   const { showToast } = useToast()
   const { goTo } = useNavigation()
 
@@ -107,11 +109,6 @@ export function useInvoiceForm() {
     customerAddress.value = cust.address || ''
   }
 
-  const customerSuggestions = computed(() => {
-    const keyword = customerName.value.trim().toLowerCase()
-    if (!keyword) return []
-    return allCustomers.value.filter((c) => c.name.toLowerCase().includes(keyword))
-  })
 
   // ---- Reset ----
   const resetForm = (silent = false) => {
@@ -284,18 +281,27 @@ export function useInvoiceForm() {
         await supabase.from('yhs_bookings').update({ status: 'Selesai' }).eq('id', sourceBookingId.value)
       }
 
+      // Simpan/perbarui pelanggan di daftar pelanggan (gagal di sini tidak membatalkan invois).
+      const customerWarning = await ensureCustomer({
+        name: payload.customer_name,
+        phone: payload.customer_wa,
+        address: payload.customer_address,
+      })
+
       const method = paymentMethod.value
       const savedPaid = paidNow.value
       const savedRemaining = remainingDue.value
       showToast(
-        missingColumns
+        customerWarning
+          ? `⚠️ Invois tersimpan, tetapi pelanggan belum masuk daftar: ${customerWarning}`
+          : missingColumns
           ? '⚠️ Tersimpan, tetapi jam sesi/nomor invois belum bisa disimpan. Jalankan sql/migrations.sql.'
           : savedRemaining > 0
             ? `✅ Invois tersimpan. Diterima ${formatCurrency(savedPaid)}, sisa ${formatCurrency(savedRemaining)} bisa dilunasi di Keuangan.`
             : isEdit
               ? `✅ Invois berhasil diperbarui (${method})`
               : '✅ Invois baru berhasil disimpan!',
-        missingColumns ? 'error' : 'success',
+        customerWarning || missingColumns ? 'error' : 'success',
       )
 
       // Kosongkan data per-transaksi; tanggal, jam, dan terapis dipertahankan untuk input berikutnya.
@@ -331,7 +337,8 @@ export function useInvoiceForm() {
 
       const sameName = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase()
       const hasOthers = invoiceHistory.value.some((inv) => inv.id !== invId && sameName(inv.customer_name, custName))
-      if (!hasOthers) {
+      const hasBookings = bookingList.value.some((b) => sameName(b.customer_name, custName))
+      if (!hasOthers && !hasBookings) {
         const target = allCustomers.value.find((c) => sameName(c.name, custName))
         if (target) await supabase.from('yhs_customers').delete().eq('id', target.id)
       }
@@ -373,7 +380,7 @@ export function useInvoiceForm() {
     serviceSearchKeywords, selectedServices, discountType, discountValue, isSubmitting,
     isPartialPayment, paidInput,
     // computed
-    subtotal, transactionDiscountAmount, totalDue, paidNow, remainingDue, invoiceNumber, customerSuggestions,
+    subtotal, transactionDiscountAmount, totalDue, paidNow, remainingDue, invoiceNumber,
     // actions
     getInvoiceNumber, getFilteredServices, selectService, addServiceRow, removeServiceRow,
     selectCustomer, resetForm, startEditInvoice, loadBookingIntoForm,

@@ -6,6 +6,7 @@ import PaymentMethodSelect from '../PaymentMethodSelect.vue'
 import ManageServicesPanel from '../ManageServicesPanel.vue'
 import ManageTherapistsPanel from '../ManageTherapistsPanel.vue'
 import InvoicePreview from '../InvoicePreview.vue'
+import CustomerAutocomplete from '../CustomerAutocomplete.vue'
 import { isUnpaid } from '../../utils/payment'
 import { formatCurrency } from '../../utils/format'
 
@@ -15,20 +16,12 @@ const {
   invoiceStartTime, invoiceEndTime, paymentMethod, remarks, selectedTherapist,
   serviceSearchKeywords, selectedServices, discountType, discountValue, isSubmitting,
   isPartialPayment, paidInput, totalDue, paidNow, remainingDue,
-  customerSuggestions, selectCustomer, getFilteredServices, selectService, addServiceRow, removeServiceRow,
+  selectCustomer, getFilteredServices, selectService, addServiceRow, removeServiceRow,
   resetForm, saveInvoice, copyInvoiceText,
 } = useInvoiceForm()
 
-const showCustomerDropdown = ref(false)
 const showManageServices = ref(false)
 const showManageTherapists = ref(false)
-
-const pickCustomer = (cust) => {
-  selectCustomer(cust)
-  showCustomerDropdown.value = false
-}
-// Tunda sedikit agar klik pada saran sempat diproses sebelum dropdown ditutup.
-const hideDropdownSoon = () => setTimeout(() => { showCustomerDropdown.value = false }, 150)
 
 const onTherapistDeleted = (name) => {
   if (selectedTherapist.value === name) selectedTherapist.value = ''
@@ -51,20 +44,9 @@ const handlePrint = () => window.print()
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div class="relative">
-          <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Nama Pelanggan (Ketik huruf...)</label>
-          <input v-model="customerName" @focus="showCustomerDropdown = true" @input="showCustomerDropdown = true" @blur="hideDropdownSoon"
-                 type="text" placeholder="Ketik nama (cth: A...)"
-                 class="w-full px-4 py-2.5 rounded-xl border border-[#ebdcc3] focus:ring-2 focus:ring-[#b48a57] outline-none text-sm bg-[#fffdfa]" />
-
-          <div v-if="showCustomerDropdown && customerSuggestions.length > 0"
-               class="absolute left-0 right-0 mt-1 bg-white border border-[#ebdcc3] rounded-xl shadow-lg z-20 max-h-40 overflow-y-auto">
-            <div v-for="cust in customerSuggestions" :key="cust.id" @mousedown.prevent="pickCustomer(cust)"
-                 class="px-4 py-2.5 text-xs hover:bg-[#fdfbf7] cursor-pointer border-b border-gray-50 flex justify-between">
-              <span class="font-bold text-[#3e3529]">{{ cust.name }}</span>
-              <span class="text-gray-400">{{ cust.phone }}</span>
-            </div>
-          </div>
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Nama Pelanggan (ketik, lalu klik untuk isi otomatis)</label>
+          <CustomerAutocomplete v-model="customerName" placeholder="Ketik nama (cth: A...)" @select="selectCustomer" />
         </div>
 
         <div>

@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { supabase } from '../lib/supabase'
 import { useMasterData } from './useMasterData'
 import { useToast } from './useToast'
+import { useCustomers } from './useCustomers'
 import { todayISO, toLocalISODate } from '../utils/period'
 import { friendlyDbError } from '../utils/db'
 import { normalizePaymentMethod } from '../utils/payment'
@@ -42,6 +43,7 @@ export const blankBooking = (date = todayISO()) => ({
 export function useBookings() {
   const { availableServices, availableTherapists, bookingList, fetchData } = useMasterData()
   const { showToast } = useToast()
+  const { ensureCustomer } = useCustomers()
 
   // ---- Kalender ----
   const calendarDaysInMonth = computed(() => {
@@ -224,7 +226,17 @@ export function useBookings() {
         : await supabase.from('yhs_bookings').insert([{ ...payload, status: 'Terjadwal' }])
       if (error) throw error
 
-      showToast(editingId ? '✏️ Booking berhasil diperbarui!' : '📅 Booking berhasil dicatat ke kalendar!')
+      const customerWarning = await ensureCustomer({
+        name: form.customer_name,
+        phone: form.customer_phone,
+        address: form.customer_address,
+      })
+      showToast(
+        customerWarning
+          ? `⚠️ Booking tersimpan, tetapi pelanggan belum masuk daftar: ${customerWarning}`
+          : editingId ? '✏️ Booking berhasil diperbarui!' : '📅 Booking berhasil dicatat ke kalendar!',
+        customerWarning ? 'error' : 'success',
+      )
       await fetchData()
       return true
     } catch (err) {

@@ -9,6 +9,7 @@ import { yearOptions } from '../../utils/period'
 import { formatCurrency } from '../../utils/format'
 import { isUnpaid } from '../../utils/payment'
 import PaymentMethodSelect from '../PaymentMethodSelect.vue'
+import CustomerAutocomplete from '../CustomerAutocomplete.vue'
 
 const { goTo } = useNavigation()
 const { availableServices, availableTherapists } = useMasterData()
@@ -41,6 +42,13 @@ const openEdit = (book) => {
   serviceKeyword.value = ''
   showForm.value = true
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// Pilih pelanggan lama -> nama, no. telefon, dan alamat terisi otomatis.
+const pickCustomer = (cust) => {
+  form.value.customer_name = cust.name
+  form.value.customer_phone = cust.phone || ''
+  form.value.customer_address = cust.address || ''
 }
 
 const closeForm = () => {
@@ -108,8 +116,8 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
         <div>
-          <label class="block font-bold text-[#8c7355] mb-1">Nama Pelanggan</label>
-          <input v-model="form.customer_name" type="text" placeholder="Nama dari WA..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
+          <label class="block font-bold text-[#8c7355] mb-1">Nama Pelanggan <span class="font-normal">(ketik, lalu klik untuk isi otomatis)</span></label>
+          <CustomerAutocomplete v-model="form.customer_name" compact placeholder="Nama dari WA..." @select="pickCustomer" />
         </div>
         <div>
           <label class="block font-bold text-[#8c7355] mb-1">No. Telefon WhatsApp</label>
