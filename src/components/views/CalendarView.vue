@@ -18,7 +18,7 @@ const {
   calendarViewMonth, calendarViewYear, selectedCalendarDate,
   calendarDaysInMonth, bookingCountByDate, bookingsGroupedByTherapist,
   packageSessionInfo, knownPackageLabels,
-  makeEditForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
+  makeEditForm, makeCopyForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
 } = useBookings()
 
 const years = yearOptions()
@@ -26,11 +26,15 @@ const dayNames = ['Ahad', 'Senin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu'
 
 const showForm = ref(false)
 const editingId = ref(null)
+const editingBook = ref(null) // booking asli yang sedang diedit (untuk banner)
+const copyFrom = ref(null)    // booking sumber saat membuat salinan
 const form = ref(blankBooking())
 const serviceKeyword = ref('')
 
 const openNew = () => {
   editingId.value = null
+  editingBook.value = null
+  copyFrom.value = null
   form.value = blankBooking(selectedCalendarDate.value)
   serviceKeyword.value = ''
   showForm.value = true
@@ -38,6 +42,8 @@ const openNew = () => {
 
 const openEdit = (book) => {
   editingId.value = book.id
+  editingBook.value = book
+  copyFrom.value = null
   form.value = makeEditForm(book)
   serviceKeyword.value = ''
   showForm.value = true
@@ -51,14 +57,28 @@ const pickCustomer = (cust) => {
   form.value.customer_address = cust.address || ''
 }
 
+// Booking baru dari salinan (cth: rawatan & jam sama, terapis lain). Booking asli tidak berubah.
+const openCopy = (book) => {
+  editingId.value = null
+  editingBook.value = null
+  copyFrom.value = book
+  form.value = makeCopyForm(book)
+  serviceKeyword.value = ''
+  showForm.value = true
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
 const closeForm = () => {
   showForm.value = false
   editingId.value = null
+  editingBook.value = null
+  copyFrom.value = null
 }
 
-const submit = async () => {
+// asNew = true: simpan sebagai booking baru (tidak menimpa booking yang sedang diedit).
+const submit = async (asNew = false) => {
   const date = form.value.booking_date
-  if (await saveBooking(form.value, editingId.value)) {
+  if (await saveBooking(form.value, asNew ? null : editingId.value)) {
     focusDate(date) // langsung tampilkan tanggal yang baru disimpan
     closeForm()
   }
@@ -111,8 +131,21 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
     <!-- Form booking (tambah / edit) -->
     <div v-if="showForm" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
       <h4 class="font-serif text-sm font-bold text-[#5a4633]">
-        {{ editingId ? '✏️ Edit Booking' : '📥 Catat Booking WhatsApp' }}
+        {{ editingId ? '✏️ Edit Booking' : copyFrom ? '📄 Booking Baru (salinan)' : '📥 Catat Booking WhatsApp' }}
       </h4>
+
+      <div v-if="editingId && editingBook" class="p-3 rounded-xl bg-amber-50 border border-amber-300 text-[11px] text-amber-900 space-y-1">
+        <p>
+          ✏️ Anda sedang <strong>mengedit</strong> booking <strong>{{ editingBook.customer_name }}</strong>
+          ({{ editingBook.therapist || 'Tanpa Terapis' }}, {{ timeLabel(editingBook) || 'tanpa jam' }}).
+          <strong>Simpan Perubahan</strong> akan <strong>menimpa</strong> booking itu.
+        </p>
+        <p>Untuk menambah booking lain (cth: terapis berbeda di jam yang sama), klik <strong>➕ Simpan sebagai Booking Baru</strong>.</p>
+      </div>
+      <div v-else-if="copyFrom" class="p-3 rounded-xl bg-sky-50 border border-sky-300 text-[11px] text-sky-900">
+        📄 Salinan dari booking <strong>{{ copyFrom.customer_name }}</strong> ({{ copyFrom.therapist || 'Tanpa Terapis' }}).
+        Pilih <strong>terapis lain</strong> (atau ubah jam/tanggal), lalu simpan. Booking asli tidak berubah.
+      </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
         <div>
@@ -214,8 +247,9 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
 
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" @click="closeForm" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">Batal</button>
-        <button type="button" @click="submit" class="px-4 py-2 bg-[#2d7a4f] text-white rounded-xl text-xs font-bold">
-          {{ editingId ? 'Simpan Perubahan' : 'Simpan ke Kalendar' }}
+        <button v-if="editingId" type="button" @click="submit(true)" class="px-4 py-2 bg-[#b48a57] text-white rounded-xl text-xs font-bold">➕ Simpan sebagai Booking Baru</button>
+        <button type="button" @click="submit(false)" class="px-4 py-2 bg-[#2d7a4f] text-white rounded-xl text-xs font-bold">
+          {{ editingId ? 'Simpan Perubahan (menimpa)' : 'Simpan ke Kalendar' }}
         </button>
       </div>
     </div>
@@ -311,6 +345,7 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
 
               <div class="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
                 <button type="button" @click="openEdit(book)" class="px-2 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px] shadow hover:bg-[#324b81]">✏️ Edit</button>
+                <button type="button" @click="openCopy(book)" class="px-2 py-1 bg-sky-600 text-white rounded font-bold text-[10px] shadow hover:bg-sky-700">📄 Salin</button>
 
                 <template v-if="book.status !== 'Selesai' && book.status !== 'Batal'">
                   <button v-if="book.is_package" type="button" @click="updateBookingStatus(book.id, 'Selesai')"

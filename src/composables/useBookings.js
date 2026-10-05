@@ -142,6 +142,14 @@ export function useBookings() {
     return form
   }
 
+  // Salinan booking untuk dijadikan booking BARU (terapis dikosongkan agar dipilih ulang).
+  const makeCopyForm = (book) => {
+    const form = makeEditForm(book)
+    form.therapist = ''
+    form.was_package = false
+    return form
+  }
+
   // ---- Simpan (baru atau edit) ----
   const saveBooking = async (form, editingId = null) => {
     if (!form.customer_name.trim() || !form.booking_date) {
@@ -168,8 +176,9 @@ export function useBookings() {
     const therapist = form.therapist || NO_THERAPIST
 
     // Bentrok jam hanya dicek bila jam diisi, dan hanya terhadap sesi lain yang punya jam.
+    // Terapis berbeda pada jam yang sama TIDAK dianggap bentrok.
     if (timed) {
-      const conflict = bookingList.value.some((b) => {
+      const clash = bookingList.value.find((b) => {
         if (editingId != null && String(b.id) === String(editingId)) return false
         if (b.booking_date !== form.booking_date || b.status === 'Batal') return false
         const bs = startOf(b)
@@ -179,8 +188,12 @@ export function useBookings() {
           b.therapist === therapist || therapist === NO_THERAPIST || !b.therapist || b.therapist === NO_THERAPIST
         return sameResource && isOverlapping(start, end, bs, be)
       })
-      if (conflict) {
-        showToast(`❌ Jam ${start} - ${end} sudah terisi/dibooking pada tanggal ini! Silakan pilih jam lain.`, 'error')
+      if (clash) {
+        const who = `${clash.customer_name} (${clash.therapist || NO_THERAPIST}) ${startOf(clash)}-${endOf(clash)}`
+        const hint = therapist === NO_THERAPIST || !clash.therapist || clash.therapist === NO_THERAPIST
+          ? 'Booking tanpa terapis dianggap memakai semua terapis, pilih terapis terlebih dahulu.'
+          : 'Pilih jam lain.'
+        showToast(`❌ Bentrok dengan booking ${who}. ${hint}`, 'error')
         return false
       }
     }
@@ -280,6 +293,6 @@ export function useBookings() {
     calendarViewMonth, calendarViewYear, selectedCalendarDate,
     calendarDaysInMonth, bookingCountByDate, bookingsGroupedByTherapist,
     packageSessionInfo, knownPackageLabels,
-    makeEditForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
+    makeEditForm, makeCopyForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
   }
 }

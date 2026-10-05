@@ -8,5 +8,8 @@ export const looksLikeMissingColumn = (err) =>
 export const friendlyDbError = (err) => {
   const msg = err?.message || String(err)
   if (looksLikeMissingColumn(err) || err?.code === '23502') return `${msg}. ${MIGRATION_HINT}`
+  if (err?.code === '23505') {
+    return `${msg}. Tabel punya aturan UNIQUE yang menolak data kembar (mis. tanggal + jam yang sama). Hapus aturan itu di Supabase agar dua booking bisa berjam sama dengan terapis berbeda.`
+  }
   return msg
 }
