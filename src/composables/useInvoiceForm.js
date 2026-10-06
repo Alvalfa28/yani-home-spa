@@ -38,7 +38,7 @@ const paidInput = ref(0)            // jumlah DP yang diterima
 const isSubmitting = ref(false)
 
 export function useInvoiceForm() {
-  const { availableServices, allCustomers, invoiceHistory, bookingList, incomeList, fetchData } = useMasterData()
+  const { availableServices, allCustomers, invoiceHistory, bookingList, reservationList, incomeList, fetchData } = useMasterData()
   const { ensureCustomer } = useCustomers()
   const { showToast } = useToast()
   const { goTo } = useNavigation()
@@ -337,7 +337,9 @@ export function useInvoiceForm() {
 
       const sameName = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase()
       const hasOthers = invoiceHistory.value.some((inv) => inv.id !== invId && sameName(inv.customer_name, custName))
-      const hasBookings = bookingList.value.some((b) => sameName(b.customer_name, custName))
+      const hasBookings =
+        bookingList.value.some((b) => sameName(b.customer_name, custName)) ||
+        reservationList.value.some((r) => sameName(r.customer_name, custName))
       if (!hasOthers && !hasBookings) {
         const target = allCustomers.value.find((c) => sameName(c.name, custName))
         if (target) await supabase.from('yhs_customers').delete().eq('id', target.id)

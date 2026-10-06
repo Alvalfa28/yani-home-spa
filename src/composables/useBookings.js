@@ -19,6 +19,11 @@ const toHM = (t) => String(t || '').slice(0, 5)
 // Jam boleh kosong: '' artinya belum ditentukan.
 const startOf = (b) => toHM(b.booking_start_time || b.booking_time)
 const endOf = (b) => toHM(b.booking_end_time) || (startOf(b) ? DEFAULT_END_TIME : '')
+const toMinutes = (hm) => {
+  const [h, m] = String(hm).split(':').map(Number)
+  return h * 60 + m
+}
+const LONG_SESSION_MINUTES = 6 * 60
 const isOverlapping = (s1, e1, s2, e2) => s1 < e2 && s2 < e1
 // Sesi tanpa jam tampil paling bawah.
 const byStartTime = (a, b) => (startOf(a) || '99:99').localeCompare(startOf(b) || '99:99')
@@ -168,6 +173,11 @@ export function useBookings() {
       showToast('❌ Jam selesai harus lebih besar dari jam mulai!', 'error')
       return false
     }
+    // Salah pilih AM/PM sering membuat durasi jadi belasan jam: minta konfirmasi sebelum menyimpan.
+    if (timed && toMinutes(end) - toMinutes(start) > LONG_SESSION_MINUTES) {
+      const hours = ((toMinutes(end) - toMinutes(start)) / 60).toFixed(1).replace('.0', '')
+      if (!confirm(`Jam yang terbaca: ${start} sampai ${end} (${hours} jam). Apakah benar? Cek AM/PM pada jam selesai.`)) return false
+    }
     if (form.is_package && !form.package_label.trim()) {
       showToast('❌ Isi nama paket (cth: Pantang 7 hari) agar sesi bisa dikelompokkan.', 'error')
       return false
@@ -193,7 +203,7 @@ export function useBookings() {
         const hint = therapist === NO_THERAPIST || !clash.therapist || clash.therapist === NO_THERAPIST
           ? 'Booking tanpa terapis dianggap memakai semua terapis, pilih terapis terlebih dahulu.'
           : 'Pilih jam lain.'
-        showToast(`❌ Bentrok dengan booking ${who}. ${hint}`, 'error')
+        showToast(`❌ Jam ${start}-${end} bentrok dengan booking ${who}. ${hint}`, 'error')
         return false
       }
     }

@@ -22,3 +22,7 @@ export const DEFAULT_END_TIME = '11:00'
 export const NO_THERAPIST = 'Tanpa Terapis'
 export const THERAPIST_BONUS_RATE = 0.10
 export const PACKAGE_PAYMENT = 'Paket (sudah dibayar)'
+
+// Perkiraan tanggal (booking belum pasti)
+export const RESERVATION_STATUS = { WAITING: 'Menunggu', SCHEDULED: 'Sudah Dijadwalkan', CANCELLED: 'Batal' }
+export const DEFAULT_FLEX_DAYS = 7

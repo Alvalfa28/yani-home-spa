@@ -2,17 +2,20 @@
 import { ref, computed } from 'vue'
 import { useMasterData } from '../../composables/useMasterData'
 import { useBookings, blankBooking } from '../../composables/useBookings'
+import { useReservations } from '../../composables/useReservations'
 import { useInvoiceForm } from '../../composables/useInvoiceForm'
 import { useNavigation } from '../../composables/useNavigation'
 import { MONTH_NAMES } from '../../utils/constants'
-import { yearOptions } from '../../utils/period'
+import { yearOptions, formatDateID } from '../../utils/period'
 import { formatCurrency } from '../../utils/format'
 import { isUnpaid } from '../../utils/payment'
 import PaymentMethodSelect from '../PaymentMethodSelect.vue'
 import CustomerAutocomplete from '../CustomerAutocomplete.vue'
+import ServicePicker from '../ServicePicker.vue'
+import TentativeDatesPanel from '../TentativeDatesPanel.vue'
 
 const { goTo } = useNavigation()
-const { availableServices, availableTherapists } = useMasterData()
+const { availableTherapists } = useMasterData()
 const { loadBookingIntoForm } = useInvoiceForm()
 const {
   calendarViewMonth, calendarViewYear, selectedCalendarDate,
@@ -20,32 +23,54 @@ const {
   packageSessionInfo, knownPackageLabels,
   makeEditForm, makeCopyForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
 } = useBookings()
+const { reservationCountByDate, reservationsForDay, makeBookingForm, markScheduled, windowRange } = useReservations()
 
 const years = yearOptions()
 const dayNames = ['Ahad', 'Senin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu']
 
 const showForm = ref(false)
 const editingId = ref(null)
-const editingBook = ref(null) // booking asli yang sedang diedit (untuk banner)
-const copyFrom = ref(null)    // booking sumber saat membuat salinan
+const editingBook = ref(null)     // booking asli yang sedang diedit (untuk banner)
+const copyFrom = ref(null)        // booking sumber saat membuat salinan
+const fromReservation = ref(null) // perkiraan tanggal yang sedang dijadwalkan
 const form = ref(blankBooking())
-const serviceKeyword = ref('')
 
-const openNew = () => {
+const resetContext = () => {
   editingId.value = null
   editingBook.value = null
   copyFrom.value = null
+  fromReservation.value = null
+}
+
+const openNew = () => {
+  resetContext()
   form.value = blankBooking(selectedCalendarDate.value)
-  serviceKeyword.value = ''
   showForm.value = true
 }
 
 const openEdit = (book) => {
+  resetContext()
   editingId.value = book.id
   editingBook.value = book
-  copyFrom.value = null
   form.value = makeEditForm(book)
-  serviceKeyword.value = ''
+  showForm.value = true
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// Booking baru dari salinan (cth: rawatan & jam sama, terapis lain). Booking asli tidak berubah.
+const openCopy = (book) => {
+  resetContext()
+  copyFrom.value = book
+  form.value = makeCopyForm(book)
+  showForm.value = true
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// Perkiraan tanggal -> booking sesi sungguhan (tanggal, jam, terapis dipastikan di sini).
+const scheduleFromReservation = (r) => {
+  resetContext()
+  fromReservation.value = r
+  form.value = makeBookingForm(r)
   showForm.value = true
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -57,46 +82,36 @@ const pickCustomer = (cust) => {
   form.value.customer_address = cust.address || ''
 }
 
-// Booking baru dari salinan (cth: rawatan & jam sama, terapis lain). Booking asli tidak berubah.
-const openCopy = (book) => {
-  editingId.value = null
-  editingBook.value = null
-  copyFrom.value = book
-  form.value = makeCopyForm(book)
-  serviceKeyword.value = ''
-  showForm.value = true
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
 const closeForm = () => {
   showForm.value = false
-  editingId.value = null
-  editingBook.value = null
-  copyFrom.value = null
+  resetContext()
 }
 
 // asNew = true: simpan sebagai booking baru (tidak menimpa booking yang sedang diedit).
 const submit = async (asNew = false) => {
   const date = form.value.booking_date
+  const reservation = fromReservation.value
   if (await saveBooking(form.value, asNew ? null : editingId.value)) {
+    if (reservation) await markScheduled(reservation.id)
     focusDate(date) // langsung tampilkan tanggal yang baru disimpan
     closeForm()
   }
 }
 
-// ---- Pilih rawatan + qty ----
-const filteredServices = computed(() => {
-  const keyword = serviceKeyword.value.toLowerCase()
-  return keyword ? availableServices.value.filter((s) => s.name.toLowerCase().includes(keyword)) : availableServices.value
+// Tampilkan jam yang terbaca (format 24 jam) + durasi, supaya salah AM/PM langsung terlihat.
+const timeCheck = computed(() => {
+  const s = form.value.booking_start_time
+  const e = form.value.booking_end_time
+  if (!s || !e) return null
+  const mins = (Number(e.slice(0, 2)) * 60 + Number(e.slice(3, 5))) - (Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5)))
+  if (mins <= 0) return { text: `Terbaca ${s} - ${e}: jam selesai harus setelah jam mulai`, bad: true }
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  const dur = `${h ? h + ' jam ' : ''}${m ? m + ' menit' : ''}`.trim()
+  return { text: `Terbaca ${s} - ${e} (durasi ${dur})${mins > 360 ? ', cek AM/PM!' : ''}`, bad: mins > 360 }
 })
-const selectedMap = computed(() => Object.fromEntries(form.value.selected_services.map((e) => [e.id, e])))
 
-const toggleService = (serv) => {
-  const list = form.value.selected_services
-  const idx = list.findIndex((e) => e.id === serv.id)
-  if (idx >= 0) list.splice(idx, 1)
-  else list.push({ id: serv.id, qty: 1, price: serv.default_price })
-}
+const dayReservations = computed(() => reservationsForDay(selectedCalendarDate.value))
 
 const statusClass = (status) => {
   if (status === 'Selesai') return 'bg-emerald-100 text-emerald-800'
@@ -119,7 +134,7 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#f4ecd8] pb-4 gap-4">
       <div>
         <h3 class="font-serif text-xl font-bold text-[#5a4633]">📅 Kalendar Jadwal Booking Berdasarkan Terapis</h3>
-        <p class="text-xs text-[#8c7355]">Jam boleh dikosongkan dulu · bisa edit booking · sesi paket tanpa nominal · validasi jam bentrok hanya bila jam diisi</p>
+        <p class="text-xs text-[#8c7355]">Jam boleh dikosongkan dulu · bisa edit/salin booking · sesi paket tanpa nominal · perkiraan tanggal 📌 untuk booking yang belum pasti</p>
       </div>
 
       <div class="flex items-center gap-3">
@@ -128,10 +143,10 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
       </div>
     </div>
 
-    <!-- Form booking (tambah / edit) -->
+    <!-- Form booking (tambah / edit / salin / dari perkiraan) -->
     <div v-if="showForm" class="bg-[#fdfbf7] p-5 rounded-2xl border border-[#b48a57] space-y-4 shadow-md w-full overflow-hidden">
       <h4 class="font-serif text-sm font-bold text-[#5a4633]">
-        {{ editingId ? '✏️ Edit Booking' : copyFrom ? '📄 Booking Baru (salinan)' : '📥 Catat Booking WhatsApp' }}
+        {{ editingId ? '✏️ Edit Booking' : copyFrom ? '📄 Booking Baru (salinan)' : fromReservation ? '📅 Jadwalkan Sesi dari Perkiraan Tanggal' : '📥 Catat Booking WhatsApp' }}
       </h4>
 
       <div v-if="editingId && editingBook" class="p-3 rounded-xl bg-amber-50 border border-amber-300 text-[11px] text-amber-900 space-y-1">
@@ -145,6 +160,11 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
       <div v-else-if="copyFrom" class="p-3 rounded-xl bg-sky-50 border border-sky-300 text-[11px] text-sky-900">
         📄 Salinan dari booking <strong>{{ copyFrom.customer_name }}</strong> ({{ copyFrom.therapist || 'Tanpa Terapis' }}).
         Pilih <strong>terapis lain</strong> (atau ubah jam/tanggal), lalu simpan. Booking asli tidak berubah.
+      </div>
+      <div v-else-if="fromReservation" class="p-3 rounded-xl bg-[#f6f2fb] border border-[#c9b8e3] text-[11px] text-[#4b3569] space-y-1">
+        <p>📌 Dari perkiraan tanggal <strong>{{ formatDateID(fromReservation.expected_date) }}</strong> untuk <strong>{{ fromReservation.customer_name }}</strong>.
+          Pilih <strong>tanggal sebenarnya</strong> (bisa berbeda dari perkiraan), jam, dan terapis.</p>
+        <p>Perkiraan akan ditandai <em>Sudah Dijadwalkan</em> setelah sesi pertama disimpan. Untuk paket beberapa hari, tambahkan sesi lainnya lewat <strong>📄 Salin</strong> atau <strong>Sesi paket</strong>.</p>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -180,6 +200,7 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
               <input v-model="form.booking_end_time" type="time" class="w-full px-3 py-2 text-xs bg-white rounded-lg border border-[#ebdcc3] outline-none" />
             </div>
           </div>
+          <p v-if="timeCheck" class="mt-1 text-[10px] font-semibold" :class="timeCheck.bad ? 'text-red-600' : 'text-gray-500'">⏱ {{ timeCheck.text }}</p>
           <button v-if="form.booking_start_time || form.booking_end_time" type="button"
                   @click="form.booking_start_time = ''; form.booking_end_time = ''"
                   class="mt-1 text-[10px] font-bold text-[#b48a57] hover:underline">Kosongkan jam (tentukan nanti)</button>
@@ -221,27 +242,8 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
           <input v-model="form.notes" type="text" placeholder="Cth: Pesan khusus..." class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none" />
         </div>
 
-        <div class="sm:col-span-2 space-y-2">
-          <label class="block font-bold text-[#8c7355]">Pilih Rawatan (centang, lalu isi jumlahnya)</label>
-          <input v-model="serviceKeyword" type="text" placeholder="🔍 Cari nama rawatan..." class="w-full px-3 py-1.5 rounded-lg border border-[#ebdcc3] text-xs bg-white outline-none mb-2" />
-
-          <div class="max-h-52 overflow-y-auto space-y-1 bg-white p-3 rounded-xl border border-[#ebdcc3]">
-            <div v-for="serv in filteredServices" :key="serv.id" class="flex items-center gap-2 py-1 border-b border-gray-50 last:border-none">
-              <input type="checkbox" :id="'srv-' + serv.id" :checked="!!selectedMap[serv.id]" @change="toggleService(serv)" class="w-4 h-4 text-[#b48a57] rounded border-[#ebdcc3]" />
-              <label :for="'srv-' + serv.id" class="text-xs text-[#3e3529] cursor-pointer flex-1 flex justify-between gap-2">
-                <span>{{ serv.name }}</span>
-                <span v-if="!form.is_package" class="font-bold text-[#b48a57] whitespace-nowrap">B$ {{ serv.default_price }}</span>
-              </label>
-              <div v-if="selectedMap[serv.id]" class="flex items-center gap-1">
-                <span class="text-[10px] font-bold text-[#8c7355]">Qty</span>
-                <input v-model.number="selectedMap[serv.id].qty" type="number" min="1" class="w-14 px-2 py-1 rounded border border-[#ebdcc3] text-xs outline-none" />
-              </div>
-            </div>
-          </div>
-
-          <p v-if="form.legacy_treatments.length" class="text-[10px] text-gray-500">
-            Rawatan lama yang sudah tidak ada di menu tetap disimpan: {{ form.legacy_treatments.map((t) => t.name).join(', ') }}
-          </p>
+        <div class="sm:col-span-2">
+          <ServicePicker v-model="form.selected_services" :hide-price="form.is_package" :legacy="form.legacy_treatments" />
         </div>
       </div>
 
@@ -265,7 +267,7 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
           <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
         </select>
       </div>
-      <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal</p>
+      <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal · <span class="font-bold text-[#6a4c93]">📌</span> = perkiraan tanggal (belum pasti)</p>
     </div>
 
     <!-- Grid kalender -->
@@ -279,9 +281,12 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
              : selectedCalendarDate === d.dateStr ? 'bg-[#f4ecd8] border-[#b48a57] shadow-sm'
              : 'bg-[#fffdfa] border-[#ebdcc3] hover:bg-amber-50/50'">
         <span v-if="d.dayNum" class="font-bold text-xs" :class="selectedCalendarDate === d.dateStr ? 'text-[#b48a57]' : 'text-[#3e3529]'">{{ d.dayNum }}</span>
-        <div v-if="d.dayNum && bookingCountByDate[d.dateStr]" class="my-auto">
-          <span class="px-1.5 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
+        <div v-if="d.dayNum && (bookingCountByDate[d.dateStr] || reservationCountByDate[d.dateStr])" class="my-auto flex flex-col items-center gap-0.5">
+          <span v-if="bookingCountByDate[d.dateStr]" class="px-1.5 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
             {{ bookingCountByDate[d.dateStr] }} sesi
+          </span>
+          <span v-if="reservationCountByDate[d.dateStr]" class="px-1.5 py-0.5 bg-[#6a4c93] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
+            📌 {{ reservationCountByDate[d.dateStr] }}
           </span>
         </div>
         <span v-if="d.dayNum"></span>
@@ -293,6 +298,19 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
       <h4 class="font-serif text-sm font-bold text-[#5a4633]">
         📋 Jadwal Sesi Tanggal: <span class="text-[#b48a57] font-bold">{{ selectedCalendarDate }}</span>
       </h4>
+
+      <!-- Perkiraan tanggal untuk hari ini (tidak terikat terapis/jam) -->
+      <div v-if="dayReservations.exact.length || dayReservations.window.length" class="p-3 rounded-xl border border-[#c9b8e3] bg-[#f6f2fb] text-xs space-y-2">
+        <p class="font-bold text-[#4b3569]">📌 Perkiraan tanggal (belum pasti)</p>
+        <div v-for="r in dayReservations.exact" :key="'e' + r.id" class="flex flex-wrap items-center justify-between gap-2 bg-white p-2 rounded-lg border border-[#ded3ec]">
+          <span><strong>{{ r.customer_name }}</strong> <span class="text-gray-500">· 📞 {{ r.customer_phone || '-' }}</span> <span class="px-1.5 py-0.5 rounded bg-[#6a4c93] text-white text-[10px] font-bold">Perkiraan tepat tanggal ini</span></span>
+          <button type="button" @click="scheduleFromReservation(r)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px]">📅 Jadwalkan Sesi</button>
+        </div>
+        <div v-for="r in dayReservations.window" :key="'w' + r.id" class="flex flex-wrap items-center justify-between gap-2 bg-white p-2 rounded-lg border border-dashed border-[#ded3ec]">
+          <span><strong>{{ r.customer_name }}</strong> <span class="text-gray-500">· perkiraan {{ formatDateID(r.expected_date, true) }} (rentang {{ windowRange(r) }})</span></span>
+          <button type="button" @click="scheduleFromReservation(r)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px]">📅 Jadwalkan Sesi</button>
+        </div>
+      </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
         <div v-for="(bookings, therapistName) in bookingsGroupedByTherapist" :key="therapistName"
@@ -367,5 +385,8 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
         </div>
       </div>
     </div>
+
+    <!-- Perkiraan tanggal: daftar + form (booking belum pasti) -->
+    <TentativeDatesPanel @schedule="scheduleFromReservation" />
   </div>
 </template>

@@ -62,3 +62,22 @@ export const describePeriod = (f) => {
     default: return 'Semua periode'
   }
 }
+
+/** Tambah/kurang hari pada 'YYYY-MM-DD' (tanggal lokal). */
+export const addDaysISO = (dateStr, days) => {
+  const d = parseLocalDate(dateStr)
+  d.setDate(d.getDate() + days)
+  return toLocalISODate(d)
+}
+
+/** Selisih hari (to - from). Positif bila `to` di masa depan. */
+export const diffDays = (fromStr, toStr) =>
+  Math.round((parseLocalDate(toStr) - parseLocalDate(fromStr)) / 86400000)
+
+/** '2026-10-30' -> '30 Oktober 2026' (short: '30 Okt'). */
+export const formatDateID = (dateStr, short = false) => {
+  if (!dateStr) return '-'
+  const d = parseLocalDate(dateStr)
+  const month = MONTH_NAMES[d.getMonth()]
+  return short ? `${d.getDate()} ${month.slice(0, 3)}` : `${d.getDate()} ${month} ${d.getFullYear()}`
+}
