@@ -75,6 +75,22 @@ export function useBookings() {
     return counts
   })
 
+  // Nama pelanggan per tanggal (unik, sesi dibatalkan tidak dihitung), urut jam.
+  const bookingNamesByDate = computed(() => {
+    const map = {}
+    bookingList.value
+      .filter((b) => b.status !== 'Batal')
+      .slice()
+      .sort(byStartTime)
+      .forEach((b) => {
+        const name = (b.customer_name || '').trim()
+        if (!name) return
+        const list = (map[b.booking_date] ||= [])
+        if (!list.includes(name)) list.push(name)
+      })
+    return map
+  })
+
   const bookingsGroupedByTherapist = computed(() => {
     const dayBookings = bookingList.value.filter((b) => b.booking_date === selectedCalendarDate.value)
     const columns = {}
@@ -301,7 +317,7 @@ export function useBookings() {
 
   return {
     calendarViewMonth, calendarViewYear, selectedCalendarDate,
-    calendarDaysInMonth, bookingCountByDate, bookingsGroupedByTherapist,
+    calendarDaysInMonth, bookingCountByDate, bookingNamesByDate, bookingsGroupedByTherapist,
     packageSessionInfo, knownPackageLabels,
     makeEditForm, makeCopyForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
   }

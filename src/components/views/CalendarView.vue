@@ -19,11 +19,14 @@ const { availableTherapists } = useMasterData()
 const { loadBookingIntoForm } = useInvoiceForm()
 const {
   calendarViewMonth, calendarViewYear, selectedCalendarDate,
-  calendarDaysInMonth, bookingCountByDate, bookingsGroupedByTherapist,
+  calendarDaysInMonth, bookingCountByDate, bookingNamesByDate, bookingsGroupedByTherapist,
   packageSessionInfo, knownPackageLabels,
   makeEditForm, makeCopyForm, saveBooking, updateBookingStatus, deleteBooking, focusDate,
 } = useBookings()
-const { reservationCountByDate, reservationsForDay, makeBookingForm, markScheduled, windowRange } = useReservations()
+const {
+  isStarted, reservationsByDate, reservationsForDay, makeBookingForm,
+  markScheduled, markStarted, unmarkStarted, windowRange,
+} = useReservations()
 
 const years = yearOptions()
 const dayNames = ['Ahad', 'Senin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu']
@@ -111,6 +114,31 @@ const timeCheck = computed(() => {
   return { text: `Terbaca ${s} - ${e} (durasi ${dur})${mins > 360 ? ', cek AM/PM!' : ''}`, bad: mins > 360 }
 })
 
+// Isi tiap sel kalender: jumlah sesi + NAMA pelanggan, dan pin 📌 (✅ bila sudah mulai rawatan).
+const MAX_NAMES = 3
+const MAX_PINS = 2
+const cellInfo = computed(() => {
+  const info = {}
+  calendarDaysInMonth.value.forEach((d) => {
+    if (!d.dateStr) return
+    const names = bookingNamesByDate.value[d.dateStr] || []
+    const pins = reservationsByDate.value[d.dateStr] || []
+    if (!names.length && !pins.length) return
+    info[d.dateStr] = {
+      count: bookingCountByDate.value[d.dateStr] || 0,
+      names: names.slice(0, MAX_NAMES),
+      moreNames: Math.max(0, names.length - MAX_NAMES),
+      pins: pins.slice(0, MAX_PINS),
+      morePins: Math.max(0, pins.length - MAX_PINS),
+      title: [
+        ...names.map((n) => `Sesi: ${n}`),
+        ...pins.map((r) => `📌 ${r.customer_name}${isStarted(r) ? ' ✅ sudah mulai rawatan' : ' (perkiraan)'}`),
+      ].join('\n'),
+    }
+  })
+  return info
+})
+
 const dayReservations = computed(() => reservationsForDay(selectedCalendarDate.value))
 
 const statusClass = (status) => {
@@ -164,7 +192,7 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
       <div v-else-if="fromReservation" class="p-3 rounded-xl bg-[#f6f2fb] border border-[#c9b8e3] text-[11px] text-[#4b3569] space-y-1">
         <p>📌 Dari perkiraan tanggal <strong>{{ formatDateID(fromReservation.expected_date) }}</strong> untuk <strong>{{ fromReservation.customer_name }}</strong>.
           Pilih <strong>tanggal sebenarnya</strong> (bisa berbeda dari perkiraan), jam, dan terapis.</p>
-        <p>Perkiraan akan ditandai <em>Sudah Dijadwalkan</em> setelah sesi pertama disimpan. Untuk paket beberapa hari, tambahkan sesi lainnya lewat <strong>📄 Salin</strong> atau <strong>Sesi paket</strong>.</p>
+        <p>Setelah sesi pertama disimpan, pin 📌 perkiraan <strong>tetap ada sebagai riwayat</strong> dan diberi ceklis ✅. Untuk paket beberapa hari, tambahkan sesi lainnya lewat <strong>📄 Salin</strong> atau <strong>Sesi paket</strong>.</p>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -267,7 +295,7 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
           <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
         </select>
       </div>
-      <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal · <span class="font-bold text-[#6a4c93]">📌</span> = perkiraan tanggal (belum pasti)</p>
+      <p class="text-gray-500 italic">Klik pada tanggal untuk melihat jadwal · <span class="font-bold text-[#6a4c93]">📌</span> = perkiraan tanggal (belum pasti) · <span class="font-bold text-emerald-700">✅</span> = sudah mulai / dijadwalkan</p>
     </div>
 
     <!-- Grid kalender -->
@@ -276,20 +304,29 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
 
       <div v-for="(d, idx) in calendarDaysInMonth" :key="idx"
            @click="d.dateStr && (selectedCalendarDate = d.dateStr)"
-           class="min-h-[60px] sm:min-h-[85px] p-1 sm:p-2 rounded-xl border flex flex-col items-center justify-between transition-all cursor-pointer relative"
+           :title="d.dateStr && cellInfo[d.dateStr] ? cellInfo[d.dateStr].title : undefined"
+           class="min-h-[72px] sm:min-h-[110px] p-1 sm:p-1.5 rounded-xl border flex flex-col items-stretch gap-1 transition-all cursor-pointer relative text-left"
            :class="!d.dayNum ? 'bg-gray-50 border-transparent cursor-default'
              : selectedCalendarDate === d.dateStr ? 'bg-[#f4ecd8] border-[#b48a57] shadow-sm'
              : 'bg-[#fffdfa] border-[#ebdcc3] hover:bg-amber-50/50'">
-        <span v-if="d.dayNum" class="font-bold text-xs" :class="selectedCalendarDate === d.dateStr ? 'text-[#b48a57]' : 'text-[#3e3529]'">{{ d.dayNum }}</span>
-        <div v-if="d.dayNum && (bookingCountByDate[d.dateStr] || reservationCountByDate[d.dateStr])" class="my-auto flex flex-col items-center gap-0.5">
-          <span v-if="bookingCountByDate[d.dateStr]" class="px-1.5 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
-            {{ bookingCountByDate[d.dateStr] }} sesi
-          </span>
-          <span v-if="reservationCountByDate[d.dateStr]" class="px-1.5 py-0.5 bg-[#6a4c93] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">
-            📌 {{ reservationCountByDate[d.dateStr] }}
-          </span>
-        </div>
-        <span v-if="d.dayNum"></span>
+        <span v-if="d.dayNum" class="font-bold text-xs text-center" :class="selectedCalendarDate === d.dateStr ? 'text-[#b48a57]' : 'text-[#3e3529]'">{{ d.dayNum }}</span>
+
+        <template v-if="d.dayNum && cellInfo[d.dateStr]">
+          <div v-if="cellInfo[d.dateStr].count" class="space-y-0.5">
+            <span class="block text-center px-1 py-0.5 bg-[#2d7a4f] text-white rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm whitespace-nowrap">{{ cellInfo[d.dateStr].count }} sesi</span>
+            <p v-for="name in cellInfo[d.dateStr].names" :key="name" class="truncate text-[9px] sm:text-[10px] leading-tight font-semibold text-[#235e3c]">• {{ name }}</p>
+            <p v-if="cellInfo[d.dateStr].moreNames" class="text-[9px] leading-tight text-gray-500">+{{ cellInfo[d.dateStr].moreNames }} lagi</p>
+          </div>
+
+          <div v-if="cellInfo[d.dateStr].pins.length" class="space-y-0.5">
+            <p v-for="r in cellInfo[d.dateStr].pins" :key="r.id"
+               class="truncate text-[9px] sm:text-[10px] leading-tight font-semibold px-1 py-0.5 rounded border border-[#6a4c93]"
+               :class="isStarted(r) ? 'bg-[#eee8f5] text-[#4b3569]' : 'bg-[#6a4c93] text-white'">
+              📌{{ isStarted(r) ? '✅' : '' }} {{ r.customer_name }}
+            </p>
+            <p v-if="cellInfo[d.dateStr].morePins" class="text-[9px] leading-tight text-[#6a4c93]">+{{ cellInfo[d.dateStr].morePins }} 📌</p>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -299,16 +336,31 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
         📋 Jadwal Sesi Tanggal: <span class="text-[#b48a57] font-bold">{{ selectedCalendarDate }}</span>
       </h4>
 
-      <!-- Perkiraan tanggal untuk hari ini (tidak terikat terapis/jam) -->
+      <!-- Perkiraan tanggal untuk hari ini (tidak terikat terapis/jam). Yang sudah diceklis tetap tampil sebagai riwayat. -->
       <div v-if="dayReservations.exact.length || dayReservations.window.length" class="p-3 rounded-xl border border-[#c9b8e3] bg-[#f6f2fb] text-xs space-y-2">
-        <p class="font-bold text-[#4b3569]">📌 Perkiraan tanggal (belum pasti)</p>
+        <p class="font-bold text-[#4b3569]">📌 Perkiraan tanggal (belum pasti) &amp; riwayat</p>
+
         <div v-for="r in dayReservations.exact" :key="'e' + r.id" class="flex flex-wrap items-center justify-between gap-2 bg-white p-2 rounded-lg border border-[#ded3ec]">
-          <span><strong>{{ r.customer_name }}</strong> <span class="text-gray-500">· 📞 {{ r.customer_phone || '-' }}</span> <span class="px-1.5 py-0.5 rounded bg-[#6a4c93] text-white text-[10px] font-bold">Perkiraan tepat tanggal ini</span></span>
-          <button type="button" @click="scheduleFromReservation(r)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px]">📅 Jadwalkan Sesi</button>
+          <span>
+            <strong>{{ r.customer_name }}</strong> <span class="text-gray-500">· 📞 {{ r.customer_phone || '-' }}</span>
+            <span v-if="isStarted(r)" class="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">✅ Sudah mulai rawatan</span>
+            <span v-else class="ml-1 px-1.5 py-0.5 rounded bg-[#6a4c93] text-white text-[10px] font-bold">Perkiraan tepat tanggal ini</span>
+          </span>
+          <span class="flex flex-wrap gap-1">
+            <template v-if="!isStarted(r)">
+              <button type="button" @click="markStarted(r.id)" class="px-2 py-1 bg-emerald-600 text-white rounded font-bold text-[10px]">☑️ Ceklis: sudah mulai</button>
+              <button type="button" @click="scheduleFromReservation(r)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px]">📅 Jadwalkan Sesi</button>
+            </template>
+            <button v-else type="button" @click="unmarkStarted(r.id)" class="px-2 py-1 bg-[#8c7355] text-white rounded font-bold text-[10px]">↩️ Batalkan ceklis</button>
+          </span>
         </div>
+
         <div v-for="r in dayReservations.window" :key="'w' + r.id" class="flex flex-wrap items-center justify-between gap-2 bg-white p-2 rounded-lg border border-dashed border-[#ded3ec]">
           <span><strong>{{ r.customer_name }}</strong> <span class="text-gray-500">· perkiraan {{ formatDateID(r.expected_date, true) }} (rentang {{ windowRange(r) }})</span></span>
-          <button type="button" @click="scheduleFromReservation(r)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px]">📅 Jadwalkan Sesi</button>
+          <span class="flex flex-wrap gap-1">
+            <button type="button" @click="markStarted(r.id)" class="px-2 py-1 bg-emerald-600 text-white rounded font-bold text-[10px]">☑️ Ceklis: sudah mulai</button>
+            <button type="button" @click="scheduleFromReservation(r)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px]">📅 Jadwalkan Sesi</button>
+          </span>
         </div>
       </div>
 

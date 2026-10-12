@@ -31,21 +31,34 @@ export function useReservations() {
   const { ensureCustomer } = useCustomers()
 
   const statusOf = (r) => r.status || ST.WAITING
+  // Ceklis ✅ = sudah mulai rawatan / sudah dijadwalkan. Nilai di database tetap 'Sudah Dijadwalkan' (kompatibel dengan data lama).
+  const isStarted = (r) => statusOf(r) === ST.SCHEDULED
+  const byDateAsc = (a, b) => String(a.expected_date).localeCompare(String(b.expected_date))
 
+  // Masih menunggu (belum mulai rawatan).
   const activeReservations = computed(() =>
-    reservationList.value
-      .filter((r) => statusOf(r) === ST.WAITING)
-      .slice()
-      .sort((a, b) => String(a.expected_date).localeCompare(String(b.expected_date))),
+    reservationList.value.filter((r) => statusOf(r) === ST.WAITING).slice().sort(byDateAsc),
   )
-
-  const sortedAll = computed(() =>
-    reservationList.value
-      .slice()
-      .sort((a, b) => String(a.expected_date).localeCompare(String(b.expected_date))),
+  // Pin ungu tetap tampil sebagai riwayat: menunggu + sudah diceklis. Hanya yang dibatalkan yang hilang.
+  const pinnedReservations = computed(() =>
+    reservationList.value.filter((r) => statusOf(r) !== ST.CANCELLED).slice().sort(byDateAsc),
   )
+  // Sudah diceklis (mulai rawatan), terbaru dulu.
+  const startedReservations = computed(() =>
+    reservationList.value.filter(isStarted).slice().sort((a, b) => byDateAsc(b, a)),
+  )
+  const sortedAll = computed(() => reservationList.value.slice().sort(byDateAsc))
 
-  // Jumlah perkiraan aktif per tanggal (untuk penanda di kalender).
+  // Pin per tanggal (menunggu + sudah diceklis) untuk kotak kalender dan blok hari terpilih.
+  const reservationsByDate = computed(() => {
+    const map = {}
+    pinnedReservations.value.forEach((r) => {
+      ;(map[r.expected_date] ||= []).push(r)
+    })
+    return map
+  })
+
+  // Jumlah yang masih MENUNGGU per tanggal (yang sudah diceklis tidak dihitung, tetapi pin-nya tetap tampil).
   const reservationCountByDate = computed(() => {
     const counts = {}
     activeReservations.value.forEach((r) => {
@@ -54,14 +67,13 @@ export function useReservations() {
     return counts
   })
 
-  // Untuk hari yang dipilih: yang tepat jatuh hari itu, dan yang rentang fleksibelnya mencakup hari itu.
+  // Untuk hari yang dipilih: pin yang tepat jatuh hari itu (termasuk yang sudah diceklis),
+  // dan yang masih menunggu yang rentang fleksibelnya mencakup hari itu.
   const reservationsForDay = (dateStr) => {
-    const exact = []
-    const window = []
-    activeReservations.value.forEach((r) => {
-      if (r.expected_date === dateStr) exact.push(r)
-      else if (Number(r.flex_days) > 0 && Math.abs(diffDays(r.expected_date, dateStr)) <= Number(r.flex_days)) window.push(r)
-    })
+    const exact = reservationsByDate.value[dateStr] || []
+    const window = activeReservations.value.filter(
+      (r) => r.expected_date !== dateStr && Number(r.flex_days) > 0 && Math.abs(diffDays(r.expected_date, dateStr)) <= Number(r.flex_days),
+    )
     return { exact, window }
   }
 
@@ -172,7 +184,14 @@ export function useReservations() {
     }
   }
 
-  const markScheduled = (id) => updateStatus(id, ST.SCHEDULED, '✅ Perkiraan ditandai sudah dijadwalkan.')
+  // Tombol ceklis: tandai sudah mulai rawatan, atau batalkan ceklis. Pin ungu TIDAK hilang.
+  const markStarted = (id) => updateStatus(id, ST.SCHEDULED, '✅ Ditandai sudah mulai rawatan (pin tetap ada sebagai riwayat).')
+  const unmarkStarted = (id) => updateStatus(id, ST.WAITING, 'Ceklis dibatalkan: perkiraan kembali menunggu.')
+  const toggleStarted = (r) => (isStarted(r) ? unmarkStarted(r.id) : markStarted(r.id))
+
+  // Setelah sesi dijadwalkan dari perkiraan: otomatis diceklis, pin tetap ada sebagai riwayat.
+  const markScheduled = (id) =>
+    updateStatus(id, ST.SCHEDULED, '✅ Sesi dijadwalkan. Perkiraan diberi ceklis (pin ungu tetap ada sebagai riwayat).')
 
   // Geser maju/mundur (cth: tanggalnya lebih awal/akhir dari perkiraan).
   const shiftDate = async (r, days) => {
@@ -200,9 +219,11 @@ export function useReservations() {
   }
 
   return {
-    reservationsAvailable, statusOf, activeReservations, sortedAll,
-    reservationCountByDate, reservationsForDay, windowRange,
+    reservationsAvailable, statusOf, isStarted,
+    activeReservations, pinnedReservations, startedReservations, sortedAll,
+    reservationsByDate, reservationCountByDate, reservationsForDay, windowRange,
     makeEditForm, makeBookingForm,
-    saveReservation, updateStatus, markScheduled, shiftDate, deleteReservation,
+    saveReservation, updateStatus, markScheduled, markStarted, unmarkStarted, toggleStarted,
+    shiftDate, deleteReservation,
   }
 }

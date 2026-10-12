@@ -11,12 +11,13 @@ const emit = defineEmits(['schedule'])
 
 const { availableTherapists } = useMasterData()
 const {
-  reservationsAvailable, statusOf, activeReservations, sortedAll, windowRange,
-  makeEditForm, saveReservation, updateStatus, shiftDate, deleteReservation,
+  reservationsAvailable, statusOf, isStarted, pinnedReservations, sortedAll, windowRange,
+  makeEditForm, saveReservation, updateStatus, toggleStarted, shiftDate, deleteReservation,
 } = useReservations()
 
-const showAll = ref(false)
-const list = computed(() => (showAll.value ? sortedAll.value : activeReservations.value))
+// Bawaan: menunggu + sudah mulai (riwayat tetap terlihat). Yang dibatalkan disembunyikan kecuali dicentang.
+const showCancelled = ref(false)
+const list = computed(() => (showCancelled.value ? sortedAll.value : pinnedReservations.value))
 
 const showForm = ref(false)
 const editingId = ref(null)
@@ -39,7 +40,8 @@ const countdown = (r) => {
   if (d > 0) return { text: `${d} hari lagi`, cls: d <= 7 ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800' }
   return { text: `Lewat ${-d} hari`, cls: 'bg-red-100 text-red-700' }
 }
-const statusCls = (s) => (s === ST.SCHEDULED ? 'bg-emerald-100 text-emerald-800' : s === ST.CANCELLED ? 'bg-gray-200 text-gray-600' : 'bg-[#eee8f5] text-[#4b3569]')
+const statusLabel = (r) => (isStarted(r) ? '✅ Sudah mulai rawatan' : statusOf(r))
+const statusCls = (r) => (isStarted(r) ? 'bg-emerald-100 text-emerald-800' : statusOf(r) === ST.CANCELLED ? 'bg-gray-200 text-gray-600' : 'bg-[#eee8f5] text-[#4b3569]')
 </script>
 
 <template>
@@ -47,7 +49,7 @@ const statusCls = (s) => (s === ST.SCHEDULED ? 'bg-emerald-100 text-emerald-800'
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
       <div>
         <h4 class="font-serif text-sm font-bold text-[#4b3569]">📌 Perkiraan Tanggal (booking belum pasti)</h4>
-        <p class="text-[11px] text-[#7d6a96]">Untuk pelanggan yang baru menetapkan tanggal perkiraan dan bisa maju/mundur. Tanpa jam & terapis, tidak mengunci jadwal terapis. Setelah tanggal pasti, klik <strong>Jadwalkan Sesi</strong>.</p>
+        <p class="text-[11px] text-[#7d6a96]">Untuk pelanggan yang baru menetapkan tanggal perkiraan dan bisa maju/mundur. Tanpa jam & terapis, tidak mengunci jadwal terapis. Klik <strong>Jadwalkan Sesi</strong> saat tanggal pasti; pin ungu tetap tersimpan sebagai riwayat dan diberi <strong>✅</strong>.</p>
       </div>
       <button v-if="reservationsAvailable" type="button" @click="openNew" class="text-xs font-bold bg-[#6a4c93] text-white px-4 py-2.5 rounded-xl shadow hover:bg-[#573d7a] whitespace-nowrap">+ Tambah Perkiraan Tanggal</button>
     </div>
@@ -106,41 +108,50 @@ const statusCls = (s) => (s === ST.SCHEDULED ? 'bg-emerald-100 text-emerald-800'
       </div>
 
       <label class="flex items-center gap-2 text-[11px] text-[#4b3569] cursor-pointer">
-        <input type="checkbox" v-model="showAll" class="w-3.5 h-3.5 rounded" />
-        Tampilkan juga yang sudah dijadwalkan / dibatalkan
+        <input type="checkbox" v-model="showCancelled" class="w-3.5 h-3.5 rounded" />
+        Tampilkan juga yang dibatalkan
       </label>
 
-      <div v-if="list.length === 0" class="text-center py-6 text-xs text-gray-500 italic">Belum ada perkiraan tanggal yang menunggu.</div>
+      <div v-if="list.length === 0" class="text-center py-6 text-xs text-gray-500 italic">Belum ada perkiraan tanggal.</div>
 
       <div v-else class="space-y-3 max-h-[480px] overflow-y-auto pr-2">
-        <div v-for="r in list" :key="r.id" class="p-4 rounded-xl border border-[#ded3ec] bg-white text-xs space-y-2 shadow-sm" :class="statusOf(r) === ST.CANCELLED ? 'opacity-60' : ''">
+        <div v-for="r in list" :key="r.id" class="p-4 rounded-xl border bg-white text-xs space-y-2 shadow-sm"
+             :class="[isStarted(r) ? 'border-emerald-300' : 'border-[#ded3ec]', statusOf(r) === ST.CANCELLED ? 'opacity-60' : '']">
           <div class="flex flex-wrap justify-between items-start gap-2">
             <div>
-              <p class="font-serif font-bold text-sm text-[#4b3569]">{{ r.customer_name }}</p>
+              <p class="font-serif font-bold text-sm text-[#4b3569]">{{ isStarted(r) ? '✅ ' : '' }}{{ r.customer_name }}</p>
               <p class="text-gray-600">📞 {{ r.customer_phone || '-' }}<span v-if="r.customer_address"> · 📍 {{ r.customer_address }}</span></p>
             </div>
             <div class="flex flex-wrap items-center gap-1">
               <span v-if="countdown(r)" class="px-2 py-0.5 rounded text-[10px] font-bold" :class="countdown(r).cls">{{ countdown(r).text }}</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-bold" :class="statusCls(statusOf(r))">{{ statusOf(r) }}</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold" :class="statusCls(r)">{{ statusLabel(r) }}</span>
             </div>
           </div>
 
           <div class="bg-[#f6f2fb] p-2 rounded border border-[#ded3ec] space-y-0.5">
             <p class="font-bold text-[#4b3569]">📌 Perkiraan: {{ formatDateID(r.expected_date) }}</p>
             <p v-if="r.original_date && r.original_date !== r.expected_date" class="text-[11px] text-amber-700">Semula {{ formatDateID(r.original_date) }} (sudah bergeser {{ Math.abs(diffDays(r.original_date, r.expected_date)) }} hari)</p>
-            <p v-if="windowRange(r)" class="text-[11px] text-gray-600">Rentang ±{{ r.flex_days }} hari: {{ windowRange(r) }}</p>
+            <p v-if="windowRange(r) && !isStarted(r)" class="text-[11px] text-gray-600">Rentang ±{{ r.flex_days }} hari: {{ windowRange(r) }}</p>
             <p v-if="r.therapist" class="text-[11px] text-gray-600">Preferensi terapis: {{ r.therapist }}</p>
             <p v-if="r.treatments && r.treatments.length" class="text-[11px] text-gray-600">Rawatan: {{ r.treatments.map((t) => t.name + ((t.qty || 1) > 1 ? ' ×' + t.qty : '')).join(', ') }}</p>
           </div>
           <p v-if="r.notes" class="text-gray-500 italic">Catatan: "{{ r.notes }}"</p>
 
           <div class="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
-            <template v-if="statusOf(r) === ST.WAITING">
+            <template v-if="statusOf(r) !== ST.CANCELLED">
+              <!-- Tombol ceklis: sudah mulai rawatan -->
+              <button type="button" @click="toggleStarted(r)"
+                      class="px-2 py-1 rounded font-bold text-[10px] shadow border"
+                      :class="isStarted(r) ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-[#4b3569] border-[#6a4c93]'">
+                {{ isStarted(r) ? '↩️ Batalkan ceklis' : '☑️ Ceklis: sudah mulai rawatan' }}
+              </button>
               <button type="button" @click="emit('schedule', r)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">📅 Jadwalkan Sesi</button>
-              <button type="button" @click="shiftDate(r, -7)" class="px-2 py-1 bg-[#eee8f5] text-[#4b3569] rounded font-bold text-[10px]">◀ 1 minggu</button>
-              <button type="button" @click="shiftDate(r, 7)" class="px-2 py-1 bg-[#eee8f5] text-[#4b3569] rounded font-bold text-[10px]">1 minggu ▶</button>
-              <button type="button" @click="openEdit(r)" class="px-2 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px] shadow">✏️ Edit / Geser</button>
-              <button type="button" @click="updateStatus(r.id, ST.CANCELLED, 'Perkiraan dibatalkan.')" class="px-2 py-1 bg-gray-500 text-white rounded font-bold text-[10px] shadow">🚫 Batal</button>
+              <template v-if="!isStarted(r)">
+                <button type="button" @click="shiftDate(r, -7)" class="px-2 py-1 bg-[#eee8f5] text-[#4b3569] rounded font-bold text-[10px]">◀ 1 minggu</button>
+                <button type="button" @click="shiftDate(r, 7)" class="px-2 py-1 bg-[#eee8f5] text-[#4b3569] rounded font-bold text-[10px]">1 minggu ▶</button>
+              </template>
+              <button type="button" @click="openEdit(r)" class="px-2 py-1 bg-[#3b5998] text-white rounded font-bold text-[10px] shadow">✏️ Edit{{ isStarted(r) ? '' : ' / Geser' }}</button>
+              <button v-if="!isStarted(r)" type="button" @click="updateStatus(r.id, ST.CANCELLED, 'Perkiraan dibatalkan.')" class="px-2 py-1 bg-gray-500 text-white rounded font-bold text-[10px] shadow">🚫 Batal</button>
             </template>
             <button v-else type="button" @click="updateStatus(r.id, ST.WAITING, 'Perkiraan diaktifkan kembali.')" class="px-2 py-1 bg-[#8c7355] text-white rounded font-bold text-[10px] shadow">↩️ Aktifkan</button>
             <button type="button" @click="deleteReservation(r)" class="px-2 py-1 bg-red-600 text-white rounded font-bold text-[10px] shadow hover:bg-red-700">🗑️ Hapus</button>
