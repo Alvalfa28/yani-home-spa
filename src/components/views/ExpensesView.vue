@@ -9,7 +9,9 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, SETTLEMENT_CATEGORY, DEFAULT_SOU
 import { describePeriod, todayISO } from '../../utils/period'
 import { formatCurrency } from '../../utils/format'
 import { effectivePaid } from '../../utils/receivable'
+import { matchesQuery } from '../../utils/search'
 import PeriodFilter from '../PeriodFilter.vue'
+import SearchInput from '../SearchInput.vue'
 import FinanceRecordForm from '../FinanceRecordForm.vue'
 import FinancialReportPrint from '../FinancialReportPrint.vue'
 
@@ -120,6 +122,17 @@ onMounted(() => {
   if (inv && remainingFor(inv) > 0) openSettlement(inv)
 })
 
+// ---- Pencarian di daftar (total di atas tetap total periode) ----
+const query = ref('')
+const shownIncomes = computed(() =>
+  filteredIncomes.value.filter((i) =>
+    matchesQuery([i.title, i.category, i.source, i.notes, i.income_date, i.amount, invoiceLabelById(i.invoice_id)], query.value)),
+)
+const shownExpenses = computed(() =>
+  filteredExpenses.value.filter((e) =>
+    matchesQuery([e.title, e.category, e.source, e.notes, e.expense_date, e.amount], query.value)),
+)
+
 // ---- Kartu rincian pembayaran ----
 const breakdownCards = [
   { key: 'cash', label: '💵 Cash / Tunai', box: 'bg-white border-[#ebdcc3]', title: 'text-[#5a4633]', badge: 'bg-amber-100 text-amber-800', amount: 'text-[#b48a57]' },
@@ -163,6 +176,11 @@ const breakdownCards = [
                        :editing="!!editingExpenseId" @save="submitExpense" @cancel="closeExpenseForm" />
 
     <PeriodFilter :filter="filter" accent="bg-[#8c4343]" />
+
+    <div class="space-y-1">
+      <SearchInput v-model="query" placeholder="Cari di daftar pemasukan & pengeluaran: keterangan, kategori, sumber uang, catatan, jumlah..." />
+      <p v-if="query.trim()" class="text-[10px] text-gray-500 px-1">Pencarian hanya menyaring daftar di bawah. Total di atas tetap total periode.</p>
+    </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <div class="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
@@ -250,14 +268,14 @@ const breakdownCards = [
 
     <!-- Daftar pemasukan manual -->
     <div v-if="incomesAvailable" class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
-      <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Rekod Pemasukan Manual & Pelunasan ({{ filteredIncomes.length }} Rekod)</h4>
+      <h4 class="font-serif text-sm font-bold text-[#5a4633]">📥 Rekod Pemasukan Manual & Pelunasan ({{ shownIncomes.length }}{{ query.trim() ? ' dari ' + filteredIncomes.length : '' }} Rekod)</h4>
 
-      <div v-if="filteredIncomes.length === 0" class="text-xs text-gray-500 text-center py-6 italic">
+      <div v-if="shownIncomes.length === 0" class="text-xs text-gray-500 text-center py-6 italic">
         Tidak ada rekod pemasukan manual pada periode ini.
       </div>
 
       <div v-else class="space-y-3 max-h-[350px] overflow-y-auto pr-2">
-        <div v-for="inc in filteredIncomes" :key="inc.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
+        <div v-for="inc in shownIncomes" :key="inc.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">{{ inc.category }}</span>
@@ -285,14 +303,14 @@ const breakdownCards = [
 
     <!-- Daftar pengeluaran -->
     <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
-      <h4 class="font-serif text-sm font-bold text-[#5a4633]">📤 Rekod Riwayat Pengeluaran ({{ filteredExpenses.length }} Rekod)</h4>
+      <h4 class="font-serif text-sm font-bold text-[#5a4633]">📤 Rekod Riwayat Pengeluaran ({{ shownExpenses.length }}{{ query.trim() ? ' dari ' + filteredExpenses.length : '' }} Rekod)</h4>
 
-      <div v-if="filteredExpenses.length === 0" class="text-xs text-gray-500 text-center py-6 italic">
+      <div v-if="shownExpenses.length === 0" class="text-xs text-gray-500 text-center py-6 italic">
         Tidak ada rekod pengeluaran pada periode ini.
       </div>
 
       <div v-else class="space-y-3 max-h-[350px] overflow-y-auto pr-2">
-        <div v-for="exp in filteredExpenses" :key="exp.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
+        <div v-for="exp in shownExpenses" :key="exp.id" class="p-4 rounded-xl border border-[#ebdcc3] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold text-[10px]">{{ exp.category }}</span>

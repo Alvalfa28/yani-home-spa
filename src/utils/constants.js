@@ -26,3 +26,5 @@ export const PACKAGE_PAYMENT = 'Paket (sudah dibayar)'
 // Perkiraan tanggal (booking belum pasti)
 export const RESERVATION_STATUS = { WAITING: 'Menunggu', SCHEDULED: 'Sudah Dijadwalkan', CANCELLED: 'Batal' }
 export const DEFAULT_FLEX_DAYS = 7
+
+export const DAY_NAMES = ['Ahad', 'Senin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu']

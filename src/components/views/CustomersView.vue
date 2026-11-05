@@ -1,11 +1,13 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useMasterData } from '../../composables/useMasterData'
 import { useCustomers } from '../../composables/useCustomers'
 import { usePeriodFilter } from '../../composables/usePeriodFilter'
 import { useNavigation } from '../../composables/useNavigation'
 import { formatCurrency } from '../../utils/format'
+import { matchesQuery } from '../../utils/search'
 import PeriodFilter from '../PeriodFilter.vue'
+import SearchInput from '../SearchInput.vue'
 
 const { goTo } = useNavigation()
 const { invoiceHistory } = useMasterData()
@@ -13,6 +15,8 @@ const { customerDirectory, missingCustomers, syncMissingCustomers } = useCustome
 const { filter, matches } = usePeriodFilter()
 
 const keyOf = (name) => (name || '').trim().toLowerCase()
+
+const query = ref('')
 
 const groupedCustomers = computed(() => {
   // Statistik kunjungan per pelanggan pada periode terpilih (nama dicocokkan tanpa peduli huruf besar/kecil).
@@ -27,6 +31,7 @@ const groupedCustomers = computed(() => {
 
   const rows = customerDirectory.value
     .filter((c) => filter.period === 'semua' || stats[c.key])
+    .filter((c) => matchesQuery([c.name, c.phone, c.address], query.value))
     .map((c) => {
       const s = stats[c.key] || { count: 0, total: 0, lastDate: '-' }
       return { ...c, visitCount: s.count, totalSpent: s.total, lastVisit: s.lastDate }
@@ -58,6 +63,8 @@ const groupedCustomers = computed(() => {
       </p>
       <button type="button" @click="syncMissingCustomers" class="px-3 py-2 bg-[#2d7a4f] text-white rounded-lg font-bold text-[11px] shadow hover:bg-[#235e3c] whitespace-nowrap">🔄 Sinkronkan ke tabel pelanggan</button>
     </div>
+
+    <SearchInput v-model="query" placeholder="Cari pelanggan: nama, no. HP, alamat..." />
 
     <PeriodFilter :filter="filter" accent="bg-[#2d7a4f]">Menampilkan pelanggan yang aktif pada periode ini</PeriodFilter>
 

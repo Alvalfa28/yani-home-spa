@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useMasterData } from '../../composables/useMasterData'
 import { usePeriodFilter } from '../../composables/usePeriodFilter'
 import { useInvoiceForm } from '../../composables/useInvoiceForm'
@@ -8,7 +8,9 @@ import { formatCurrency, formatDateTime } from '../../utils/format'
 import { paymentStatusOf } from '../../utils/receivable'
 import { useSettlement } from '../../composables/useSettlement'
 import { useToast } from '../../composables/useToast'
+import { matchesQuery, treatmentNames } from '../../utils/search'
 import PeriodFilter from '../PeriodFilter.vue'
+import SearchInput from '../SearchInput.vue'
 
 const { goTo } = useNavigation()
 const { invoiceHistory, incomeList, incomesAvailable } = useMasterData()
@@ -17,7 +19,18 @@ const { showToast } = useToast()
 const { getInvoiceNumber, startEditInvoice, deleteInvoice } = useInvoiceForm()
 const { filter, matches } = usePeriodFilter()
 
-const list = computed(() => invoiceHistory.value.filter((inv) => matches(inv.invoice_date)))
+const query = ref('')
+const list = computed(() =>
+  invoiceHistory.value.filter(
+    (inv) =>
+      matches(inv.invoice_date) &&
+      matchesQuery(
+        [getInvoiceNumber(inv), inv.customer_name, inv.customer_wa, inv.customer_address, inv.therapist, inv.remarks,
+          inv.payment_method, treatmentNames(inv.treatments), inv.invoice_date],
+        query.value,
+      ),
+  ),
+)
 const statusOf = (inv) => paymentStatusOf(inv, incomeList.value)
 const badgeLabel = (inv) => {
   const st = statusOf(inv)
@@ -44,6 +57,8 @@ const totalAmount = computed(() => list.value.reduce((acc, inv) => acc + (Number
       </div>
       <button type="button" @click="goTo('form')" class="text-xs font-bold bg-[#3b5998] text-white px-4 py-2.5 rounded-xl shadow">Kembali ke Form</button>
     </div>
+
+    <SearchInput v-model="query" placeholder="Cari invois: nomor, nama, no. HP, alamat, terapis, rawatan, catatan, cara bayar..." />
 
     <PeriodFilter :filter="filter" accent="bg-[#3b5998]">
       Menampilkan {{ list.length }} rekod (Total: {{ formatCurrency(totalAmount) }})

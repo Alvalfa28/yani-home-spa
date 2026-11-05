@@ -1,9 +1,12 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useReservations, blankReservation } from '../composables/useReservations'
 import { useMasterData } from '../composables/useMasterData'
-import { RESERVATION_STATUS as ST } from '../utils/constants'
+import { RESERVATION_STATUS as ST, DAY_NAMES } from '../utils/constants'
 import { todayISO, diffDays, formatDateID } from '../utils/period'
+import { useReservationList, STATUS_OPTIONS, SORT_OPTIONS } from '../composables/useReservationList'
+import PeriodFilter from './PeriodFilter.vue'
+import SearchInput from './SearchInput.vue'
 import CustomerAutocomplete from './CustomerAutocomplete.vue'
 import ServicePicker from './ServicePicker.vue'
 
@@ -11,13 +14,12 @@ const emit = defineEmits(['schedule'])
 
 const { availableTherapists } = useMasterData()
 const {
-  reservationsAvailable, statusOf, isStarted, pinnedReservations, sortedAll, windowRange,
+  reservationsAvailable, statusOf, isStarted, windowRange,
   makeEditForm, saveReservation, updateStatus, toggleStarted, shiftDate, deleteReservation,
 } = useReservations()
 
-// Bawaan: menunggu + sudah mulai (riwayat tetap terlihat). Yang dibatalkan disembunyikan kecuali dicentang.
-const showCancelled = ref(false)
-const list = computed(() => (showCancelled.value ? sortedAll.value : pinnedReservations.value))
+// Pencarian + filter periode (tanggal/hari/minggu/bulan/tahun) + status + urutan.
+const { filter, query, status, weekday, sort, list, totalCount, isFiltered, reset } = useReservationList()
 
 const showForm = ref(false)
 const editingId = ref(null)
@@ -107,12 +109,40 @@ const statusCls = (r) => (isStarted(r) ? 'bg-emerald-100 text-emerald-800' : sta
         </div>
       </div>
 
-      <label class="flex items-center gap-2 text-[11px] text-[#4b3569] cursor-pointer">
-        <input type="checkbox" v-model="showCancelled" class="w-3.5 h-3.5 rounded" />
-        Tampilkan juga yang dibatalkan
-      </label>
+      <!-- Cari + sortir -->
+      <div class="space-y-3 bg-white p-4 rounded-xl border border-[#ded3ec]">
+        <SearchInput v-model="query" placeholder="Cari perkiraan: nama, no. HP, catatan, terapis, rawatan, hari/bulan..." />
+        <PeriodFilter :filter="filter" accent="bg-[#6a4c93]">Berdasarkan tanggal perkiraan</PeriodFilter>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Status</label>
+            <select v-model="status" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Hari dalam seminggu</label>
+            <select v-model="weekday" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option value="">Semua hari</option>
+              <option v-for="(name, i) in DAY_NAMES" :key="i" :value="i">{{ name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-[#8c7355] mb-1">Urutkan</label>
+            <select v-model="sort" class="w-full px-3 py-2 rounded-lg border border-[#ebdcc3] bg-white outline-none">
+              <option v-for="o in SORT_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex flex-wrap justify-between items-center gap-2 text-[11px] text-[#4b3569]">
+          <span>Menampilkan <strong>{{ list.length }}</strong> dari {{ totalCount }} perkiraan</span>
+          <button v-if="isFiltered" type="button" @click="reset" class="px-2 py-1 rounded bg-[#eee8f5] font-bold">↺ Reset filter</button>
+        </div>
+      </div>
 
-      <div v-if="list.length === 0" class="text-center py-6 text-xs text-gray-500 italic">Belum ada perkiraan tanggal.</div>
+      <div v-if="list.length === 0" class="text-center py-6 text-xs text-gray-500 italic">
+        {{ totalCount === 0 ? 'Belum ada perkiraan tanggal.' : 'Tidak ada perkiraan yang cocok dengan pencarian/filter.' }}
+      </div>
 
       <div v-else class="space-y-3 max-h-[480px] overflow-y-auto pr-2">
         <div v-for="r in list" :key="r.id" class="p-4 rounded-xl border bg-white text-xs space-y-2 shadow-sm"

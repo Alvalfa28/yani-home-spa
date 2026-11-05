@@ -1,17 +1,24 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { usePersonalExpenses } from '../../composables/usePersonalExpenses'
 import { useMasterData } from '../../composables/useMasterData'
 import { useNavigation } from '../../composables/useNavigation'
 import { PERSONAL_CATEGORIES, DEFAULT_SOURCES } from '../../utils/constants'
 import { todayISO } from '../../utils/period'
 import { formatCurrency } from '../../utils/format'
+import { matchesQuery } from '../../utils/search'
 import PeriodFilter from '../PeriodFilter.vue'
+import SearchInput from '../SearchInput.vue'
 import FinanceRecordForm from '../FinanceRecordForm.vue'
 
 const { goTo } = useNavigation()
 const { personalAvailable } = useMasterData()
 const { filter, filtered, total, byCategory, bySource, sourceSuggestions, saveExpense, deleteExpense } = usePersonalExpenses()
+
+const query = ref('')
+const shown = computed(() =>
+  filtered.value.filter((e) => matchesQuery([e.title, e.category, e.source, e.notes, e.expense_date, e.amount], query.value)),
+)
 
 const blank = () => ({ title: '', amount: 0, expense_date: todayISO(), category: PERSONAL_CATEGORIES[0], source: DEFAULT_SOURCES[0], notes: '' })
 const showForm = ref(false)
@@ -86,9 +93,10 @@ const submit = async () => { if (await saveExpense(form.value, editingId.value))
       </div>
 
       <div class="space-y-3">
-        <div v-if="filtered.length === 0" class="text-center py-8 text-gray-500 text-xs italic">Belum ada pengeluaran pribadi pada periode ini.</div>
+        <SearchInput v-model="query" placeholder="Cari pengeluaran pribadi: keterangan, kategori, sumber uang, catatan, jumlah..." />
+        <div v-if="shown.length === 0" class="text-center py-8 text-gray-500 text-xs italic">{{ filtered.length === 0 ? 'Belum ada pengeluaran pribadi pada periode ini.' : 'Tidak ada yang cocok dengan pencarian.' }}</div>
         <div v-else class="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
-          <div v-for="exp in filtered" :key="exp.id" class="p-4 rounded-xl border border-[#ded3ec] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
+          <div v-for="exp in shown" :key="exp.id" class="p-4 rounded-xl border border-[#ded3ec] bg-white text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm">
             <div class="space-y-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="px-2 py-0.5 bg-[#eee8f5] text-[#4b3569] rounded font-bold text-[10px]">{{ exp.category }}</span>

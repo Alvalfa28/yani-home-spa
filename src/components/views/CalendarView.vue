@@ -3,16 +3,18 @@ import { ref, computed } from 'vue'
 import { useMasterData } from '../../composables/useMasterData'
 import { useBookings, blankBooking } from '../../composables/useBookings'
 import { useReservations } from '../../composables/useReservations'
+import { useCalendarSearch } from '../../composables/useCalendarSearch'
 import { useInvoiceForm } from '../../composables/useInvoiceForm'
 import { useNavigation } from '../../composables/useNavigation'
-import { MONTH_NAMES } from '../../utils/constants'
-import { yearOptions, formatDateID } from '../../utils/period'
+import { MONTH_NAMES, DAY_NAMES } from '../../utils/constants'
+import { yearOptions, formatDateID, parseLocalDate } from '../../utils/period'
 import { formatCurrency } from '../../utils/format'
 import { isUnpaid } from '../../utils/payment'
 import PaymentMethodSelect from '../PaymentMethodSelect.vue'
 import CustomerAutocomplete from '../CustomerAutocomplete.vue'
 import ServicePicker from '../ServicePicker.vue'
 import TentativeDatesPanel from '../TentativeDatesPanel.vue'
+import SearchInput from '../SearchInput.vue'
 
 const { goTo } = useNavigation()
 const { availableTherapists } = useMasterData()
@@ -140,6 +142,17 @@ const cellInfo = computed(() => {
 })
 
 const dayReservations = computed(() => reservationsForDay(selectedCalendarDate.value))
+
+// ---- Pencarian booking + perkiraan ----
+const { query: searchQuery, results: searchResults } = useCalendarSearch()
+const dayName = (date) => DAY_NAMES[parseLocalDate(date).getDay()]
+const kindLabel = (kind) => ({ sesi: '📅 Sesi', paket: '📦 Sesi paket', perkiraan: '📌 Perkiraan' })[kind]
+const kindClass = (kind) => (kind === 'perkiraan' ? 'bg-[#eee8f5] text-[#4b3569]' : kind === 'paket' ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800')
+const goToResult = (item) => {
+  focusDate(item.date)
+  document.getElementById('jadwal-harian')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+}
+const canSchedule = (item) => item.kind === 'perkiraan' && (item.source.status || 'Menunggu') === 'Menunggu'
 
 const statusClass = (status) => {
   if (status === 'Selesai') return 'bg-emerald-100 text-emerald-800'
@@ -284,6 +297,42 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
       </div>
     </div>
 
+    <!-- Pencarian booking & perkiraan -->
+    <div class="bg-[#fffdfa] p-4 rounded-xl border border-[#ebdcc3] space-y-3">
+      <SearchInput v-model="searchQuery" placeholder="Cari booking / perkiraan: nama, no. HP, terapis, catatan, rawatan, paket, bulan, hari..." />
+      <div v-if="searchQuery.trim()" class="space-y-2">
+        <p class="text-[11px] text-[#8c7355]">
+          {{ searchResults.length }} hasil<span v-if="searchResults.length >= 100"> (menampilkan 100 teratas, persempit pencarian)</span>
+          · mendatang lebih dulu, lalu yang sudah lewat
+        </p>
+        <div v-if="searchResults.length === 0" class="text-xs text-gray-500 italic py-2">Tidak ada booking atau perkiraan yang cocok.</div>
+        <div v-else class="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+          <div v-for="r in searchResults" :key="r.key" class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-lg border bg-white text-xs"
+               :class="r.kind === 'perkiraan' ? 'border-[#c9b8e3]' : 'border-[#ebdcc3]'">
+            <div class="space-y-0.5">
+              <p class="font-bold text-[#5a4633]">
+                {{ r.name }}
+                <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold" :class="kindClass(r.kind)">{{ kindLabel(r.kind) }}</span>
+                <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700">{{ r.status }}</span>
+              </p>
+              <p class="text-gray-600">
+                📅 {{ formatDateID(r.date) }} ({{ dayName(r.date) }})
+                <span v-if="r.time"> · ⏰ {{ r.time }}</span>
+                <span v-else-if="r.kind !== 'perkiraan'"> · jam belum ditentukan</span>
+                <span v-if="r.therapist"> · 👩‍⚕️ {{ r.therapist }}</span>
+                <span v-if="r.phone"> · 📞 {{ r.phone }}</span>
+              </p>
+              <p v-if="r.detail" class="text-gray-500">{{ r.detail }}</p>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" @click="goToResult(r)" class="px-2 py-1 bg-[#b48a57] text-white rounded font-bold text-[10px] shadow hover:bg-[#a07747]">📅 Lihat di kalender</button>
+              <button v-if="canSchedule(r)" type="button" @click="scheduleFromReservation(r.source)" class="px-2 py-1 bg-[#2d7a4f] text-white rounded font-bold text-[10px] shadow hover:bg-[#235e3c]">Jadwalkan Sesi</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Pilih bulan -->
     <div class="flex flex-wrap items-center justify-between bg-[#fffdfa] p-3 rounded-xl border border-[#ebdcc3] text-xs gap-3">
       <div class="flex flex-wrap items-center gap-3">
@@ -331,7 +380,7 @@ const showPrice = (book, tr) => !book.is_package && Number(tr.price) > 0
     </div>
 
     <!-- Jadwal harian per terapis -->
-    <div class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
+    <div id="jadwal-harian" class="bg-[#fffdfa] p-5 rounded-2xl border border-[#ebdcc3] space-y-4">
       <h4 class="font-serif text-sm font-bold text-[#5a4633]">
         📋 Jadwal Sesi Tanggal: <span class="text-[#b48a57] font-bold">{{ selectedCalendarDate }}</span>
       </h4>
