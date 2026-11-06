@@ -45,7 +45,7 @@ const handlePrint = () => window.print()
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Nama Pelanggan (ketik, lalu klik untuk isi otomatis)</label>
+          <label class="block text-xs font-bold uppercase tracking-wider text-[#8c7355] mb-1">Nama Pelanggan</label>
           <CustomerAutocomplete v-model="customerName" placeholder="Ketik nama (cth: A...)" @select="selectCustomer" />
         </div>
 
