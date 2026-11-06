@@ -15,7 +15,7 @@ const {
     <div class="text-center border-b border-[#ebdcc3] pb-6 mb-6 flex flex-col items-center">
       <img :src="logoImage" alt="Logo" class="w-16 h-16 rounded-full object-cover shadow-sm border border-[#ebdcc3] mb-2" />
       <h2 class="font-serif text-xl font-bold text-[#3e3529]">Yani Home & Spa</h2>
-      <p class="text-[11px] text-[#8c7355]">Tanjong Bunut, Brunei Darussalam<br>+6737100696</p>
+      <p class="text-[11px] text-[#8c7355]">Tanjong Bunut, Brunei Darussalam<br>+6738698379</p>
     </div>
 
     <div class="flex justify-between items-start mb-6 text-xs">
